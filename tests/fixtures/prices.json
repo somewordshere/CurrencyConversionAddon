@@ -1,0 +1,14 @@
+[
+  { "text": "$1,299.99", "pageCurrency": "USD", "currency": "USD", "amount": 1299.99 },
+  { "text": "1.299,99 €", "pageCurrency": "EUR", "currency": "EUR", "amount": 1299.99 },
+  { "text": "CHF 1'419.95", "pageCurrency": "CHF", "currency": "CHF", "amount": 1419.95 },
+  { "text": "70,000 ¥", "pageCurrency": "JPY", "currency": "JPY", "amount": 70000 },
+  { "text": "3 999 ₴", "pageCurrency": "UAH", "currency": "UAH", "amount": 3999 },
+  { "text": "PLN46.19", "pageCurrency": "PLN", "currency": "PLN", "amount": 46.19 },
+  {
+    "text": "KWD 1.234",
+    "pageCurrency": "KWD",
+    "currency": "KWD",
+    "amount": 1.234
+  }
+]

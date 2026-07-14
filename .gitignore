@@ -1,0 +1,23 @@
+.DS_Store
+Thumbs.db
+node_modules/
+coverage/
+playwright-report/
+test-results/
+downloaded websites/
+*.log
+
+# Internal review material and generated references
+audit/
+structure.txt
+store/privacy-policy.md
+
+# Keep only one ready-to-upload archive per release
+release/unpacked/
+release/*.zip
+!release/*-chrome-store.zip
+
+# Publish only the screenshots used by the README
+screenshots/*
+!screenshots/current-popup.png
+!screenshots/page-conversion.png

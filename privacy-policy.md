@@ -1,8 +1,8 @@
-# Currency Converter Privacy Policy
+# Currency Converter Pro Privacy Policy
 
-Effective date: June 21, 2026
+Effective date: July 10, 2026
 
-Currency Converter is a Chrome extension that identifies prices on webpages and converts them into a currency selected by the user.
+Currency Converter Pro is a Chrome extension that identifies prices on webpages and converts them into a currency selected by the user.
 
 ## Information processed by the extension
 
@@ -13,7 +13,9 @@ To provide currency detection and conversion, the extension processes the follow
 - The webpage's domain and declared language, used as weak currency-detection signals
 - Text deliberately highlighted by the user for individual conversion
 
-This webpage information is processed temporarily on the user's device. It is not collected by the developer, stored by the extension, or transmitted to the developer or the exchange-rate provider.
+This webpage information is processed temporarily on the user's device. Page
+contents and highlighted text are not collected by the developer, retained by
+the extension, or transmitted to the developer or exchange-rate provider.
 
 ## Settings and locally stored information
 
@@ -22,11 +24,19 @@ The extension stores:
 - Whether the extension is enabled
 - The selected source-currency mode
 - The selected target currency
-- A temporary daily cache of exchange rates
+- Price-display and page-prompt preferences
+- Recently selected currency codes
+- A cache of exchange rates, including the rate date and fetch time
+- The origins of websites the user explicitly chooses to remember
 
-Extension settings are stored using Chrome Storage Sync and may be synchronized by Google according to the user's Chrome settings and Google's privacy practices. Exchange-rate data is stored locally in Chrome and is replaced as rates are refreshed.
+Core extension settings are stored using Chrome Storage Sync and may be
+synchronized by Google according to the user's Chrome settings and Google's
+privacy practices. Recent currencies, remembered website origins, and
+exchange-rate data are stored locally in Chrome.
 
-The extension does not store webpage contents, highlighted text, browsing history, or visited URLs.
+The extension does not store webpage contents, highlighted text, or general
+browsing history. It stores only the website origins the user deliberately marks
+for automatic conversion, until the user disables that preference.
 
 ## Exchange-rate service
 
@@ -34,7 +44,9 @@ The extension requests reference exchange rates from the public Frankfurter API 
 
 https://api.frankfurter.dev/
 
-Only currency codes required for a conversion, such as `CHF` and `EUR`, are included in these requests. Webpage contents, highlighted text, prices, URLs, and browsing history are not sent to Frankfurter.
+Only ISO currency codes for the source and supported quote currencies are included
+in these requests. Webpage contents, highlighted text, price values, URLs, and
+browsing history are not sent to Frankfurter.
 
 Requests use HTTPS. As with normal internet requests, Frankfurter and its infrastructure provider may receive technical request information such as the user's IP address and browser network metadata. Their handling of that information is governed by their own practices.
 
@@ -55,14 +67,19 @@ The extension uses the following Chrome permissions:
 
 - `storage`: saves extension settings and caches exchange rates
 - `contextMenus`: provides the “Convert selected currency” right-click action
-- Access to HTTP and HTTPS webpages: detects and displays currency conversions
+- `activeTab` and `scripting`: temporarily processes the page after a user action
+- Optional access to a specific HTTP or HTTPS website: requested only when the
+  user enables automatic conversion for that website and revoked when forgotten
 - Access to `api.frankfurter.dev`: retrieves exchange rates
 
 ## Data retention and deletion
 
 Webpage information and selected text are processed only while the relevant webpage is open and are not retained.
 
-Saved settings remain until the user changes them, clears extension data, or uninstalls the extension. Cached exchange rates are refreshed by date and are removed when Chrome removes the extension's local storage.
+Saved settings and remembered website origins remain until the user changes
+them, clears extension data, or uninstalls the extension. Cached exchange rates
+are refreshed regularly and remain available as an offline fallback until local
+extension data is cleared or the extension is uninstalled.
 
 ## Security
 
@@ -78,5 +95,4 @@ If the extension's data practices change, this policy will be updated before the
 
 ## Contact
 
-For privacy questions, contact the developer using the support contact shown on the Currency Converter Chrome Web Store listing.
-
+For privacy questions, contact the developer using the support contact shown on the Currency Converter Pro Chrome Web Store listing.

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Currency Converter Pro</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <div>
+          <h1>Currency Converter Pro</h1>
+          <p id="siteState" class="site-state">Current page</p>
+        </div>
+        <label class="page-toggle" title="Enable webpage conversion">
+          <span>Page conversion</span>
+          <span class="switch">
+            <input id="enabled" type="checkbox">
+            <span class="switch-track" aria-hidden="true"></span>
+            <span class="sr-only">Webpage conversion enabled</span>
+          </span>
+        </label>
+      </header>
+
+      <section class="currency-panel" aria-label="Currency pair">
+        <label class="field">
+          <span>From</span>
+          <span class="currency-combobox">
+            <input id="fromCurrencySearch" type="text" role="combobox" aria-label="Source currency" aria-autocomplete="list" aria-expanded="false" aria-controls="fromCurrencyList" autocomplete="off" spellcheck="false">
+            <span id="fromCurrencyList" class="currency-listbox" role="listbox" aria-label="Source currencies" hidden></span>
+            <select id="fromCurrency" class="currency-select-native" aria-hidden="true" tabindex="-1"></select>
+          </span>
+        </label>
+        <button id="swapCurrencies" class="icon-button" type="button" title="Swap currencies" aria-label="Swap currencies">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m17 2 4 4-4 4"/>
+            <path d="M3 6h18"/>
+            <path d="m7 22-4-4 4-4"/>
+            <path d="M21 18H3"/>
+          </svg>
+        </button>
+        <label class="field">
+          <span>To</span>
+          <span class="currency-combobox">
+            <input id="toCurrencySearch" type="text" role="combobox" aria-label="Target currency" aria-autocomplete="list" aria-expanded="false" aria-controls="toCurrencyList" autocomplete="off" spellcheck="false">
+            <span id="toCurrencyList" class="currency-listbox" role="listbox" aria-label="Target currencies" hidden></span>
+            <select id="toCurrency" class="currency-select-native" aria-hidden="true" tabindex="-1"></select>
+          </span>
+        </label>
+      </section>
+
+      <section class="quick-converter" aria-labelledby="quickConverterTitle">
+        <h2 id="quickConverterTitle">Convert custom amount</h2>
+        <div class="quick-converter-grid">
+          <label class="field" for="quickAmount">
+            <span>Amount</span>
+            <input id="quickAmount" type="text" inputmode="decimal" autocomplete="off" value="1">
+          </label>
+          <div class="quick-output">
+            <span>Result</span>
+            <output id="quickResult" for="quickAmount fromCurrency toCurrency" aria-live="polite">—</output>
+          </div>
+        </div>
+        <p id="quickRateInfo" class="quick-rate-info"></p>
+      </section>
+
+      <button id="convertSite" class="primary" type="button">Convert page prices</button>
+
+      <details id="pageOptions" class="page-options">
+        <summary>Page options</summary>
+        <div class="page-options-content">
+          <label class="display-row">
+            <span>Price display</span>
+            <select id="displayMode">
+              <option value="beside">Original and converted</option>
+              <option value="replace">Converted only</option>
+            </select>
+          </label>
+
+          <label class="remember-row">
+            <input id="rememberSite" type="checkbox">
+            <span>
+              <strong>Always convert this website</strong>
+              <small>Grants access only to this site. You can revoke it anytime.</small>
+            </span>
+          </label>
+
+          <label class="prompt-row">
+            <input id="showPagePrompt" type="checkbox">
+            <span>Show the in-page conversion prompt</span>
+          </label>
+        </div>
+      </details>
+
+      <div id="secondaryActions" class="secondary-actions">
+        <button id="clearPage" class="secondary" type="button" disabled>Undo conversion</button>
+        <button id="clearSite" class="secondary danger" type="button" hidden>Forget site</button>
+      </div>
+
+      <div id="statusContainer" class="status-container" style="display: none;">
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </div>
+      <p id="rateInfo" class="rate-info"></p>
+      <p class="hint">Highlight a price for a quick conversion, or press <kbd id="shortcutKey">Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Y</kbd>.</p>
+    </main>
+
+    <script src="../shared/currencies.js"></script>
+    <script src="../shared/messages.js"></script>
+    <script src="../content/number-parser.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

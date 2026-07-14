@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta itemprop="priceCurrency" content="USD">
+    <title>Extension test shop</title>
+  </head>
+  <body>
+    <main>
+      <p id="initial" class="product-price">Price: $100.00</p>
+      <div hidden><span id="hidden-price">Hidden price: $999.00</span></div>
+      <div id="catalog"></div>
+      <div id="dynamic"></div>
+    </main>
+    <script>
+      globalThis.addDynamicPrice = () => {
+        const price = document.createElement("p");
+        price.className = "product-price";
+        price.textContent = "Later price: $25.00";
+        document.getElementById("dynamic").appendChild(price);
+      };
+      globalThis.addLargeCatalog = (count = 12000) => {
+        const fragment = document.createDocumentFragment();
+        for (let index = 0; index < count; index += 1) {
+          const item = document.createElement("p");
+          item.textContent = `Catalog item ${index}`;
+          fragment.appendChild(item);
+        }
+        const price = document.createElement("p");
+        price.id = "large-price";
+        price.className = "product-price";
+        price.textContent = "Large catalog price: $40.00";
+        fragment.appendChild(price);
+        document.getElementById("catalog").appendChild(fragment);
+      };
+    </script>
+  </body>
+</html>
