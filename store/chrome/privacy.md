@@ -1,6 +1,6 @@
 # Chrome Web Store Privacy Answers
 
-These answers are written to match Currency Converter Pro version 1.5.1.
+These answers are written to match Currency Converter Pro version 1.6.0.
 
 ## Single purpose
 

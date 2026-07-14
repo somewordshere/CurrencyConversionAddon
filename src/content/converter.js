@@ -336,7 +336,7 @@
 
   async function ensureRates(baseCurrency) {
     if (activeRatesByBase[baseCurrency]?.[settings.toCurrency]) return { ok: true };
-    const result = await chrome.runtime.sendMessage({
+    const result = await ExtensionAPI.runtime.sendMessage({
       type: CurrencyMessages.GET_RATES,
       baseCurrency
     });

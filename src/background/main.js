@@ -1,10 +1,3 @@
-importScripts(
-  "../shared/currencies.js",
-  "../shared/messages.js",
-  "catalog.js",
-  "rates.js"
-);
-
 const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
   fromCurrency: "AUTO",
@@ -15,6 +8,7 @@ const DEFAULT_SETTINGS = Object.freeze({
 const SITE_PREFERENCES_KEY = "autoConvertSites";
 const M = CurrencyMessages;
 const CONTENT_SCRIPT_FILES = [
+  "shared/browser-api.js",
   "shared/currencies.js",
   "shared/messages.js",
   "content/number-parser.js",
@@ -25,19 +19,19 @@ const CONTENT_SCRIPT_FILES = [
 ];
 const CONTENT_STYLE_FILES = ["content/styles.css"];
 
-chrome.runtime.onInstalled.addListener(async () => {
+ExtensionAPI.runtime.onInstalled.addListener(async () => {
   try {
-    const stored = await chrome.storage.sync.get(Object.keys(DEFAULT_SETTINGS));
+    const stored = await ExtensionAPI.storage.sync.get(Object.keys(DEFAULT_SETTINGS));
     const catalog = await CurrencyCatalogService.getCurrencies();
     const supportedCodes = catalog.currencies.map((currency) => currency.code);
-    await chrome.storage.sync.set({
+    await ExtensionAPI.storage.sync.set({
       ...DEFAULT_SETTINGS,
       ...sanitizeSettings(stored, supportedCodes)
     });
-    await chrome.storage.local.remove("favoriteCurrencies");
+    await ExtensionAPI.storage.local.remove("favoriteCurrencies");
 
-    await chrome.contextMenus.removeAll();
-    chrome.contextMenus.create({
+    await ExtensionAPI.contextMenus.removeAll();
+    ExtensionAPI.contextMenus.create({
       id: "convert-selection",
       title: "Convert selected currency",
       contexts: ["selection"]
@@ -48,22 +42,22 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
 });
 
-chrome.runtime.onStartup.addListener(() => {
+ExtensionAPI.runtime.onStartup.addListener(() => {
   reconcileRememberedSites().catch((error) => {
     console.error("Could not restore remembered-site registrations.", error);
   });
 });
 
-chrome.permissions.onRemoved.addListener(() => {
+ExtensionAPI.permissions.onRemoved.addListener(() => {
   reconcileRememberedSites().catch(() => {});
 });
 
-chrome.contextMenus.onClicked.addListener(async function handleContextMenuClick(info, tab) {
+ExtensionAPI.contextMenus.onClicked.addListener(async function handleContextMenuClick(info, tab) {
   if (info.menuItemId !== "convert-selection" || !isSupportedTab(tab)) return;
 
   try {
     await ensureContentScripts(tab.id);
-    await chrome.tabs.sendMessage(tab.id, { type: M.CONVERT_SELECTION });
+    await ExtensionAPI.tabs.sendMessage(tab.id, { type: M.CONVERT_SELECTION });
   } catch (error) {
     console.info(
       "Currency Converter Pro could not access this page. Reload the page and try again.",
@@ -72,19 +66,19 @@ chrome.contextMenus.onClicked.addListener(async function handleContextMenuClick(
   }
 });
 
-chrome.commands.onCommand.addListener(async (command) => {
+ExtensionAPI.commands.onCommand.addListener(async (command) => {
   if (command !== "convert-page") return;
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [tab] = await ExtensionAPI.tabs.query({ active: true, currentWindow: true });
   if (!isSupportedTab(tab)) return;
   try {
     await ensureContentScripts(tab.id);
-    await chrome.tabs.sendMessage(tab.id, { type: M.RUN_SITE_CONVERSION });
+    await ExtensionAPI.tabs.sendMessage(tab.id, { type: M.RUN_SITE_CONVERSION });
   } catch (error) {
     console.info("Could not run the keyboard conversion command.", error);
   }
 });
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+ExtensionAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handleMessage(message, sender)
     .then(sendResponse)
     .catch((error) => sendResponse({
@@ -120,7 +114,7 @@ async function handleMessage(message, sender) {
 async function getSettings() {
   const catalog = await CurrencyCatalogService.getCurrencies();
   const supportedCodes = catalog.currencies.map((currency) => currency.code);
-  const stored = await chrome.storage.sync.get(Object.keys(DEFAULT_SETTINGS));
+  const stored = await ExtensionAPI.storage.sync.get(Object.keys(DEFAULT_SETTINGS));
   return { ok: true, settings: { ...DEFAULT_SETTINGS, ...sanitizeSettings(stored, supportedCodes) } };
 }
 
@@ -171,7 +165,7 @@ async function updateSettings(payload) {
     }
   }
 
-  await chrome.storage.sync.set(settings);
+  await ExtensionAPI.storage.sync.set(settings);
   return { ok: true, settings };
 }
 
@@ -199,8 +193,8 @@ function sanitizeSettings(value, supportedCodes = CurrencyCatalog.CURRENCY_CODES
 async function setBadge(tabId, count) {
   if (!tabId) return { ok: false };
   const text = Number.isInteger(count) && count > 0 ? String(Math.min(count, 999)) : "";
-  await chrome.action.setBadgeBackgroundColor({ tabId, color: "#047857" });
-  await chrome.action.setBadgeText({ tabId, text });
+  await ExtensionAPI.action.setBadgeBackgroundColor({ tabId, color: "#047857" });
+  await ExtensionAPI.action.setBadgeText({ tabId, text });
   return { ok: true };
 }
 
@@ -209,7 +203,7 @@ async function getSiteStatus(originValue) {
   if (!site) return { ok: false, remembered: false, error: "This page cannot be remembered." };
 
   const preferences = await getSitePreferences();
-  const hasPermission = await chrome.permissions.contains({ origins: [site.pattern] });
+  const hasPermission = await ExtensionAPI.permissions.contains({ origins: [site.pattern] });
   return {
     ok: true,
     origin: site.origin,
@@ -222,14 +216,14 @@ async function rememberSite(originValue) {
   const site = normalizeSite(originValue);
   if (!site) return { ok: false, error: "Only normal HTTP and HTTPS websites can be remembered." };
 
-  const hasPermission = await chrome.permissions.contains({ origins: [site.pattern] });
+  const hasPermission = await ExtensionAPI.permissions.contains({ origins: [site.pattern] });
   if (!hasPermission) {
     return { ok: false, needsPermission: true, pattern: site.pattern, error: "Site access was not granted." };
   }
 
   const preferences = await getSitePreferences();
   preferences[site.origin] = true;
-  await chrome.storage.local.set({ [SITE_PREFERENCES_KEY]: preferences });
+  await ExtensionAPI.storage.local.set({ [SITE_PREFERENCES_KEY]: preferences });
   await registerSiteContentScript(site);
   return { ok: true, remembered: true, origin: site.origin };
 }
@@ -241,11 +235,11 @@ async function forgetSite(originValue) {
   const preferences = await getSitePreferences();
   delete preferences[site.origin];
   delete preferences[site.hostname];
-  await chrome.storage.local.set({ [SITE_PREFERENCES_KEY]: preferences });
+  await ExtensionAPI.storage.local.set({ [SITE_PREFERENCES_KEY]: preferences });
   await unregisterSiteContentScript(site);
 
-  const hasPermission = await chrome.permissions.contains({ origins: [site.pattern] });
-  if (hasPermission) await chrome.permissions.remove({ origins: [site.pattern] });
+  const hasPermission = await ExtensionAPI.permissions.contains({ origins: [site.pattern] });
+  if (hasPermission) await ExtensionAPI.permissions.remove({ origins: [site.pattern] });
   return { ok: true, remembered: false, origin: site.origin };
 }
 
@@ -258,24 +252,24 @@ async function reconcileRememberedSites() {
     if (!remembered) continue;
     const site = normalizeSite(key);
     if (!site) continue;
-    const hasPermission = await chrome.permissions.contains({ origins: [site.pattern] });
+    const hasPermission = await ExtensionAPI.permissions.contains({ origins: [site.pattern] });
     if (!hasPermission) continue;
     normalizedPreferences[site.origin] = true;
     desiredIds.add(siteScriptId(site.origin));
     await registerSiteContentScript(site);
   }
 
-  const registered = await chrome.scripting.getRegisteredContentScripts();
+  const registered = await ExtensionAPI.scripting.getRegisteredContentScripts();
   const obsoleteIds = registered
     .filter((script) => script.id.startsWith("ccp_site_") && !desiredIds.has(script.id))
     .map((script) => script.id);
-  if (obsoleteIds.length) await chrome.scripting.unregisterContentScripts({ ids: obsoleteIds });
-  await chrome.storage.local.set({ [SITE_PREFERENCES_KEY]: normalizedPreferences });
+  if (obsoleteIds.length) await ExtensionAPI.scripting.unregisterContentScripts({ ids: obsoleteIds });
+  await ExtensionAPI.storage.local.set({ [SITE_PREFERENCES_KEY]: normalizedPreferences });
 }
 
 async function registerSiteContentScript(site) {
   const id = siteScriptId(site.origin);
-  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [id] });
+  const existing = await ExtensionAPI.scripting.getRegisteredContentScripts({ ids: [id] });
   const registration = {
     id,
     matches: [site.pattern],
@@ -287,20 +281,20 @@ async function registerSiteContentScript(site) {
   };
 
   if (existing.length) {
-    await chrome.scripting.updateContentScripts([registration]);
+    await ExtensionAPI.scripting.updateContentScripts([registration]);
   } else {
-    await chrome.scripting.registerContentScripts([registration]);
+    await ExtensionAPI.scripting.registerContentScripts([registration]);
   }
 }
 
 async function unregisterSiteContentScript(site) {
   const id = siteScriptId(site.origin);
-  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [id] });
-  if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: [id] });
+  const existing = await ExtensionAPI.scripting.getRegisteredContentScripts({ ids: [id] });
+  if (existing.length) await ExtensionAPI.scripting.unregisterContentScripts({ ids: [id] });
 }
 
 async function getSitePreferences() {
-  const stored = await chrome.storage.local.get(SITE_PREFERENCES_KEY);
+  const stored = await ExtensionAPI.storage.local.get(SITE_PREFERENCES_KEY);
   return { ...(stored[SITE_PREFERENCES_KEY] || {}) };
 }
 
@@ -333,14 +327,14 @@ function isSupportedTab(tab) {
 
 async function ensureContentScripts(tabId) {
   try {
-    await chrome.tabs.sendMessage(tabId, { type: M.CONTENT_READY });
+    await ExtensionAPI.tabs.sendMessage(tabId, { type: M.CONTENT_READY });
     return;
   } catch (_error) {
-    await chrome.scripting.insertCSS({
+    await ExtensionAPI.scripting.insertCSS({
       target: { tabId },
       files: CONTENT_STYLE_FILES
     });
-    await chrome.scripting.executeScript({
+    await ExtensionAPI.scripting.executeScript({
       target: { tabId },
       files: CONTENT_SCRIPT_FILES
     });

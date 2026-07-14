@@ -1,8 +1,8 @@
 # Currency Converter Pro Privacy Policy
 
-Effective date: July 10, 2026
+Effective date: July 14, 2026
 
-Currency Converter Pro is a Chrome extension that identifies prices on webpages and converts them into a currency selected by the user.
+Currency Converter Pro is a Chrome and Firefox extension that identifies prices on webpages and converts them into a currency selected by the user.
 
 ## Information processed by the extension
 
@@ -13,9 +13,11 @@ To provide currency detection and conversion, the extension processes the follow
 - The webpage's domain and declared language, used as weak currency-detection signals
 - Text deliberately highlighted by the user for individual conversion
 
-This webpage information is processed temporarily on the user's device. Page
+This webpage information is processed temporarily on the user's device. Raw page
 contents and highlighted text are not collected by the developer, retained by
-the extension, or transmitted to the developer or exchange-rate provider.
+the extension, or transmitted to the developer or exchange-rate provider. A
+detected ISO source-currency code may be included in the rate request described
+below.
 
 ## Settings and locally stored information
 
@@ -29,10 +31,10 @@ The extension stores:
 - A cache of exchange rates, including the rate date and fetch time
 - The origins of websites the user explicitly chooses to remember
 
-Core extension settings are stored using Chrome Storage Sync and may be
-synchronized by Google according to the user's Chrome settings and Google's
-privacy practices. Recent currencies, remembered website origins, and
-exchange-rate data are stored locally in Chrome.
+Core extension settings use the browser's extension sync storage and may be
+synchronized by Google or Mozilla according to the user's browser settings and
+the browser provider's privacy practices. Recent currencies, remembered website
+origins, and exchange-rate data are stored locally in the browser.
 
 The extension does not store webpage contents, highlighted text, or general
 browsing history. It stores only the website origins the user deliberately marks
@@ -63,7 +65,7 @@ The developer does not:
 
 ## Permissions
 
-The extension uses the following Chrome permissions:
+The extension uses the following browser permissions:
 
 - `storage`: saves extension settings and caches exchange rates
 - `contextMenus`: provides the “Convert selected currency” right-click action
@@ -95,4 +97,4 @@ If the extension's data practices change, this policy will be updated before the
 
 ## Contact
 
-For privacy questions, contact the developer using the support contact shown on the Currency Converter Pro Chrome Web Store listing.
+For privacy questions, contact the developer using the support contact shown on the Currency Converter Pro store listing or GitHub repository.

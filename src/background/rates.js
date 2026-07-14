@@ -73,7 +73,7 @@
   }
 
   async function readCachedBase(baseCurrency) {
-    const stored = await chrome.storage.local.get(CACHE_KEY);
+    const stored = await ExtensionAPI.storage.local.get(CACHE_KEY);
     const cache = stored[CACHE_KEY];
     return cache?.version === CACHE_VERSION ? cache.bases?.[baseCurrency] || null : null;
   }
@@ -116,10 +116,10 @@
 
   async function saveBaseRates(baseCurrency, baseCache) {
     cacheWriteQueue = cacheWriteQueue.catch(() => {}).then(async () => {
-      const stored = await chrome.storage.local.get(CACHE_KEY);
+      const stored = await ExtensionAPI.storage.local.get(CACHE_KEY);
       const cache = stored[CACHE_KEY];
       const existingBases = cache?.version === CACHE_VERSION ? cache.bases || {} : {};
-      await chrome.storage.local.set({
+      await ExtensionAPI.storage.local.set({
         [CACHE_KEY]: {
           version: CACHE_VERSION,
           bases: { ...existingBases, [baseCurrency]: baseCache }

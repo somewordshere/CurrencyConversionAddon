@@ -6,7 +6,7 @@
   let settings = null;
   let settingsLoadPromise = null;
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  ExtensionAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === M.CONTENT_READY) {
       sendResponse({ ok: true });
       return;
@@ -21,7 +21,7 @@
     return true;
   });
 
-  chrome.storage.onChanged.addListener(async (changes, areaName) => {
+  ExtensionAPI.storage.onChanged.addListener(async (changes, areaName) => {
     if (areaName === "sync" && (
       changes.enabled || changes.fromCurrency || changes.toCurrency ||
       changes.displayMode || changes.showPagePrompt
@@ -65,7 +65,7 @@
   }
 
   async function loadSettings() {
-    const result = await chrome.runtime.sendMessage({ type: M.GET_SETTINGS });
+    const result = await ExtensionAPI.runtime.sendMessage({ type: M.GET_SETTINGS });
     if (!result?.ok) return;
     settings = result.settings;
     CurrencyDetector.resetPageCurrencyDetection();
@@ -115,7 +115,7 @@
     await updateBadge(0);
     CurrencyPageUi.clearTransientUi();
     if (forgetSite) {
-      await chrome.runtime.sendMessage({ type: M.FORGET_SITE, origin: getCurrentOrigin() });
+      await ExtensionAPI.runtime.sendMessage({ type: M.FORGET_SITE, origin: getCurrentOrigin() });
     }
     if (settings?.enabled && settings.showPagePrompt && !suppressPrompt) CurrencyPageUi.showPageConvertPrompt();
     else CurrencyPageUi.removePageConvertPrompt();
@@ -123,7 +123,7 @@
   }
 
   function getSiteStatus() {
-    return chrome.runtime.sendMessage({ type: M.GET_SITE_STATUS, origin: getCurrentOrigin() });
+    return ExtensionAPI.runtime.sendMessage({ type: M.GET_SITE_STATUS, origin: getCurrentOrigin() });
   }
 
   function getCurrentOrigin() {
@@ -184,6 +184,6 @@
   }
 
   function updateBadge(count) {
-    return chrome.runtime.sendMessage({ type: M.SET_BADGE, count }).catch(() => {});
+    return ExtensionAPI.runtime.sendMessage({ type: M.SET_BADGE, count }).catch(() => {});
   }
 })();

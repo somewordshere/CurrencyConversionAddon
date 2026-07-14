@@ -2,6 +2,33 @@
 
 All notable changes to Currency Converter Pro are documented here. Dates reflect the release preparation date for each version.
 
+## 1.6.0 - 2026-07-14
+
+### Added
+
+- Added a Firefox Manifest V3 build generated from the same runtime source as Chrome.
+- Added a shared browser API adapter so promise-based extension calls work consistently in Chrome and Firefox.
+- Added separate Chrome and Firefox manifest overrides, including Mozilla Add-ons identity, minimum-version, and data-collection declarations.
+- Added `build:chrome`, `build:firefox`, `lint:firefox`, and `run:firefox` development commands.
+
+### Changed
+
+- Moved shared runtime code into `src/` and now generate browser-specific unpacked builds in `dist/`.
+- Split the background implementation into shared logic, a Chrome service-worker entry point, and a Firefox background-script declaration.
+- Changed the Playwright suite to test the generated Chrome artifact instead of the repository root.
+- Organized Store documentation by browser and historical archives by release version.
+- Updated the privacy policy and permission documentation for both browsers, including Firefox's minimal website-content transmission declaration for detected ISO currency codes.
+
+### Testing
+
+- Added project checks for both manifest variants and enforced the shared extension API boundary.
+- Validated the Firefox build with Mozilla `web-ext` with zero errors, warnings, or notices.
+- Re-ran all unit, regression, and Chromium extension tests against the cross-browser source and generated package.
+
+### Packaging
+
+- Built separate 1.6.0 Chrome and Firefox upload archives containing runtime files only.
+
 ## 1.5.1 - 2026-07-14
 
 ### Added

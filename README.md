@@ -1,10 +1,10 @@
 # 💱 Currency Converter Pro
 
-Currency Converter Pro is a privacy-focused Chrome extension that converts prices on shopping pages into a currency you understand.
+Currency Converter Pro is a privacy-focused Chrome and Firefox extension that converts prices on shopping pages into a currency you understand.
 
-**Current version:** 1.5.1 · **Platform:** Chrome Manifest V3 · **License:** MIT
+**Current version:** 1.6.0 · **Platforms:** Chrome and Firefox Manifest V3 · **License:** MIT
 
-[🛍️ Chrome Web Store](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) · [📦 Download the latest build](release/currency-converter-1.5.1-chrome-store.zip) · [🔒 Privacy policy](privacy-policy.md) · [📝 Changelog](CHANGELOG.md)
+[🛍️ Chrome Web Store](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) · [📦 Chrome build](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip) · [🦊 Firefox build](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip) · [🔒 Privacy policy](privacy-policy.md) · [📝 Changelog](CHANGELOG.md)
 
 ## 📸 Screenshots
 
@@ -32,20 +32,31 @@ Currency Converter Pro is a privacy-focused Chrome extension that converts price
 
 Open the [Currency Converter Pro listing](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) and select **Add to Chrome**.
 
-### Load a release manually
+### Load the Chrome release manually
 
-1. Download the [latest Chrome Store ZIP](release/currency-converter-1.5.1-chrome-store.zip).
+1. Download the [latest Chrome ZIP](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip).
 2. Extract the ZIP to a permanent folder.
 3. Open `chrome://extensions` in Chrome.
 4. Enable **Developer mode**.
 5. Select **Load unpacked**.
 6. Choose the extracted folder containing `manifest.json`.
 
+### Test the Firefox release manually
+
+The repository package is unsigned and intended for Mozilla Add-ons submission or temporary local testing. Firefox 140 or newer is required.
+
+1. Download and extract the [latest Firefox ZIP](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip).
+2. Open `about:debugging#/runtime/this-firefox`.
+3. Select **Load Temporary Add-on**.
+4. Choose the extracted `manifest.json`.
+
+Temporary add-ons are removed when Firefox closes. A normal persistent installation requires a Mozilla-signed package.
+
 ## 🧭 How to use it
 
 ### Convert an entire page
 
-1. Open the extension from the Chrome toolbar.
+1. Open the extension from the browser toolbar.
 2. Turn on **Page conversion**.
 3. Keep **AUTO** selected, or search for a source currency manually.
 4. Search for and select the currency you want to see.
@@ -62,7 +73,7 @@ Highlight a supported price on the page and use the small conversion prompt or t
 
 ### Remember a website
 
-Open **Page options** and enable **Always convert this website**. Chrome grants access only to that website. Use **Forget site** to revoke the permission later.
+Open **Page options** and enable **Always convert this website**. The browser grants access only to that website. Use **Forget site** to revoke the permission later.
 
 ## ⚙️ How it works
 
@@ -117,6 +128,7 @@ Page contents, highlighted text, price values, visited URLs, and browsing histor
 | `activeTab` and `scripting` | Temporarily reads and updates the current page after a user action. |
 | Optional website access | Enables automatic conversion only on websites the user explicitly remembers. |
 | `api.frankfurter.dev` | Retrieves reference exchange rates using ISO currency codes. |
+| Firefox `websiteContent` data declaration | Discloses that a source ISO currency code detected from the page can be transmitted to the rate provider; raw page text, prices, and URLs are not transmitted. |
 
 Read the complete [privacy policy](privacy-policy.md) for retention, deletion, and provider details.
 
@@ -131,7 +143,7 @@ Read the complete [privacy policy](privacy-policy.md) for retention, deletion, a
 
 ## ⚠️ Limitations
 
-- Chrome internal pages such as `chrome://extensions` cannot be modified.
+- Browser-protected pages such as `chrome://extensions` and `about:` pages cannot be modified.
 - Prices inside images, closed shadow roots, and inaccessible cross-origin frames cannot be converted.
 - Some unusual or heavily scripted price layouts may need a manually selected source currency.
 - Cached rates warn after 48 hours and are never used after seven days.
@@ -144,9 +156,10 @@ The project requires Node.js 20 or newer.
 ```bash
 npm ci
 npm run verify
+npm run lint:firefox
 ```
 
-`npm run verify` checks the Manifest V3 configuration, validates release files, performs JavaScript syntax checks, and runs the unit and regression test suite for parsing, detection, formatting, settings, permissions, catalogs, caching, timeouts, and service-worker behavior.
+`npm run verify` checks the shared Manifest V3 configuration and browser overrides, validates runtime files, performs JavaScript syntax checks, and runs the unit and regression test suite for parsing, detection, formatting, settings, permissions, catalogs, caching, timeouts, and background behavior. `npm run lint:firefox` builds the Firefox target and validates it with Mozilla's `web-ext` tool.
 
 To run the real extension in Chromium:
 
@@ -155,7 +168,13 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-The Playwright suite loads the unpacked extension and verifies popup initialization, production script injection, settings persistence, dynamic-price conversion, cached-rate metadata, and exact undo behavior.
+The Playwright suite loads the generated Chrome artifact and verifies popup initialization, production script injection, settings persistence, dynamic-price conversion, cached-rate metadata, and exact undo behavior.
+
+To open the generated Firefox build in a temporary development profile:
+
+```bash
+npm run run:firefox
+```
 
 ## 🛠️ Building a release
 
@@ -171,32 +190,43 @@ macOS or Linux:
 sh ./scripts/build-release.sh
 ```
 
-The build scripts read the version from `manifest.json` and create runtime-only ZIP archives in `release/`. Tests, reports, documentation, and development files are excluded from the extension package.
+Or build either target directly:
+
+```bash
+npm run build:chrome
+npm run build:firefox
+```
+
+The build composes `manifests/base.json` with the selected browser override, copies only `src/` runtime assets into `dist/<browser>/`, and writes upload-ready ZIP archives to `release/<version>/`. Tests, reports, documentation, source manifests, and development files are excluded from both packages.
 
 ## 📦 Recent releases
 
 | Version | Highlights | Download |
 | --- | --- | --- |
-| 1.5.1 | Searchable currency selectors, refined dropdown styling, accessible animations, and a stable Page options reveal | [ZIP](release/currency-converter-1.5.1-chrome-store.zip) |
-| 1.5.0 | Quick amount converter, remembered websites, dynamic-page support, display modes, provider catalog, and resilient rate caching | [ZIP](release/currency-converter-1.5.0-chrome-store.zip) |
-| 1.4.2 | Clean Store package with regression verification | [ZIP](release/currency-converter-1.4.2-chrome-store.zip) |
-| 1.4.1 | Reduced default website access with `activeTab`, `scripting`, and user-triggered injection | [ZIP](release/currency-converter-1.4.1-chrome-store.zip) |
-| 1.4.0 | Improved detector accuracy, split-price handling, regression tests, and Store icons | [ZIP](release/currency-converter-1.4.0-chrome-store.zip) |
+| 1.6.0 | Shared Chrome/Firefox source, browser-specific manifests, dual builds, and Firefox validation | [Chrome](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip) · [Firefox](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip) |
+| 1.5.1 | Searchable currency selectors, refined dropdown styling, accessible animations, and a stable Page options reveal | [Chrome](release/1.5.1/currency-converter-1.5.1-chrome-store.zip) |
+| 1.5.0 | Quick amount converter, remembered websites, dynamic-page support, display modes, provider catalog, and resilient rate caching | [Chrome](release/1.5.0/currency-converter-1.5.0-chrome-store.zip) |
+| 1.4.2 | Clean Store package with regression verification | [Chrome](release/1.4.2/currency-converter-1.4.2-chrome-store.zip) |
+| 1.4.1 | Reduced default website access with `activeTab`, `scripting`, and user-triggered injection | [Chrome](release/1.4.1/currency-converter-1.4.1-chrome-store.zip) |
+| 1.4.0 | Improved detector accuracy, split-price handling, regression tests, and Store icons | [Chrome](release/1.4.0/currency-converter-1.4.0-chrome-store.zip) |
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
 
 ## 🗂️ Project structure
 
 ```text
-background/   Settings, permissions, currency catalog, and rate services
-content/      Detection, parsing, conversion, dynamic scanning, and page UI
-icons/        Chrome extension icons
-popup/        Popup interface and searchable currency controls
-release/      Verified Chrome Web Store ZIP archives
+src/          Shared extension runtime used by both browsers
+  background/ Shared logic plus the small Chrome service-worker entry
+  content/    Detection, parsing, conversion, dynamic scanning, and page UI
+  icons/      Extension icons
+  popup/      Popup interface and searchable currency controls
+  shared/     Browser API adapter, currencies, and message names
+manifests/    Common manifest plus Chrome and Firefox overrides
+dist/         Generated unpacked browser builds (not committed)
+release/      Versioned Chrome and Firefox release archives
 screenshots/  Images used by this README
-scripts/      Validation, icon, and release-building utilities
-shared/       Shared currencies and message names
-store/        Chrome Web Store listing and privacy-field documentation
+scripts/      Manifest composition, validation, icon, and release utilities
+store/        Browser-specific Store listing and privacy documentation
 tests/        Unit, regression, fixture, service-worker, and Playwright tests
 ```
 

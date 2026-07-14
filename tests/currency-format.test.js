@@ -6,7 +6,7 @@ const vm = require("node:vm");
 
 const context = vm.createContext({ Intl });
 vm.runInContext(
-  fs.readFileSync(path.resolve(__dirname, "../shared/currencies.js"), "utf8"),
+  fs.readFileSync(path.resolve(__dirname, "../src/shared/currencies.js"), "utf8"),
   context
 );
 

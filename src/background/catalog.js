@@ -15,7 +15,7 @@
   }
 
   async function loadCurrencies(forceRefresh) {
-    const stored = await chrome.storage.local.get(CACHE_KEY);
+    const stored = await ExtensionAPI.storage.local.get(CACHE_KEY);
     const cache = stored[CACHE_KEY];
     if (!forceRefresh && isFresh(cache)) return buildResult(cache.currencies, true, false);
 
@@ -24,7 +24,7 @@
       if (!response.ok) throw new Error(`Could not refresh currencies (${response.status}).`);
       const currencies = sanitizeCurrencyResponse(await response.json());
       if (currencies.length < 2) throw new Error("The currency provider returned no usable catalog.");
-      await chrome.storage.local.set({
+      await ExtensionAPI.storage.local.set({
         [CACHE_KEY]: {
           version: CACHE_VERSION,
           fetchedAt: new Date().toISOString(),

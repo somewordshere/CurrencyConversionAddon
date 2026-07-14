@@ -22,7 +22,7 @@ function createCatalogService({ cache = null, fetchImpl }) {
         USD: { symbols: ["$"] }
       }
     },
-    chrome: {
+    ExtensionAPI: {
       storage: {
         local: {
           async get() { return { providerCurrencyCatalog: storage.providerCurrencyCatalog }; },
@@ -32,7 +32,7 @@ function createCatalogService({ cache = null, fetchImpl }) {
     }
   });
   vm.runInContext(
-    fs.readFileSync(path.resolve(__dirname, "../background/catalog.js"), "utf8"),
+    fs.readFileSync(path.resolve(__dirname, "../src/background/catalog.js"), "utf8"),
     context
   );
   return { service: context.CurrencyCatalogService, storage };

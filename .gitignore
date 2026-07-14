@@ -4,6 +4,8 @@ node_modules/
 coverage/
 playwright-report/
 test-results/
+dist/
+web-ext-artifacts/
 downloaded websites/
 *.log
 
@@ -12,7 +14,7 @@ audit/
 structure.txt
 store/privacy-policy.md
 
-# Keep only one ready-to-upload archive per release
+# Keep generated unpacked builds out of the repository
 release/unpacked/
 release/*.zip
 !release/*-chrome-store.zip

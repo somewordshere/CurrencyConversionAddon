@@ -6,7 +6,7 @@ const vm = require("node:vm");
 
 const context = vm.createContext({});
 vm.runInContext(
-  fs.readFileSync(path.resolve(__dirname, "../content/number-parser.js"), "utf8"),
+  fs.readFileSync(path.resolve(__dirname, "../src/content/number-parser.js"), "utf8"),
   context
 );
 const { parseLocaleNumber, normalizeDigits } = context.CurrencyNumberParser;

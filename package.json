@@ -1,12 +1,19 @@
 {
   "name": "currency-converter-pro-extension",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "private": true,
   "description": "Privacy-focused Manifest V3 currency conversion extension",
   "scripts": {
     "test": "node --test",
-    "test:browser": "playwright test",
-    "test:browser:headed": "playwright test --headed",
+    "prepare:chrome": "node scripts/build.mjs chrome --prepare-only",
+    "prepare:firefox": "node scripts/build.mjs firefox --prepare-only",
+    "build": "node scripts/build.mjs all",
+    "build:chrome": "node scripts/build.mjs chrome",
+    "build:firefox": "node scripts/build.mjs firefox",
+    "lint:firefox": "npm run prepare:firefox && web-ext lint --source-dir dist/firefox",
+    "run:firefox": "npm run prepare:firefox && web-ext run --source-dir dist/firefox",
+    "test:browser": "npm run prepare:chrome && playwright test",
+    "test:browser:headed": "npm run prepare:chrome && playwright test --headed",
     "check": "node scripts/check-project.js",
     "verify": "npm run check && npm test"
   },
@@ -15,6 +22,7 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "@playwright/test": "1.61.1"
+    "@playwright/test": "1.61.1",
+    "web-ext": "9.4.0"
   }
 }

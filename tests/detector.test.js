@@ -32,9 +32,9 @@ const context = vm.createContext({
 });
 
 for (const file of [
-  "shared/currencies.js",
-  "content/number-parser.js",
-  "content/detector.js"
+  "src/shared/currencies.js",
+  "src/content/number-parser.js",
+  "src/content/detector.js"
 ]) {
   vm.runInContext(
     fs.readFileSync(path.join(root, file), "utf8"),

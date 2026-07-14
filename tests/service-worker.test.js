@@ -6,21 +6,14 @@ const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
 const event = { addListener() {} };
-let context;
-context = vm.createContext({
+const context = vm.createContext({
   console,
   URL,
   setTimeout,
   clearTimeout,
   AbortController,
   fetch: async () => ({ ok: false, status: 503 }),
-  importScripts(...files) {
-    for (const file of files) {
-      const resolved = path.resolve(root, "background", file);
-      vm.runInContext(fs.readFileSync(resolved, "utf8"), context, { filename: resolved });
-    }
-  },
-  chrome: {
+  ExtensionAPI: {
     runtime: { onInstalled: event, onStartup: event, onMessage: event },
     permissions: { onRemoved: event },
     contextMenus: { onClicked: event },
@@ -32,11 +25,19 @@ context = vm.createContext({
   }
 });
 
-vm.runInContext(
-  fs.readFileSync(path.join(root, "background/service-worker.js"), "utf8"),
-  context,
-  { filename: "background/service-worker.js" }
-);
+for (const file of [
+  "src/shared/currencies.js",
+  "src/shared/messages.js",
+  "src/background/catalog.js",
+  "src/background/rates.js",
+  "src/background/main.js"
+]) {
+  vm.runInContext(
+    fs.readFileSync(path.join(root, file), "utf8"),
+    context,
+    { filename: file }
+  );
+}
 
 test("settings are restricted to supported values", () => {
   const invalid = context.sanitizeSettings({

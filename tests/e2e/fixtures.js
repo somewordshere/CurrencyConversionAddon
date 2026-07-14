@@ -1,7 +1,7 @@
 const path = require("node:path");
 const { test: base, chromium, expect } = require("@playwright/test");
 
-const extensionPath = path.resolve(__dirname, "../..");
+const extensionPath = path.resolve(__dirname, "../../dist/chrome");
 
 const test = base.extend({
   context: async ({}, use) => {

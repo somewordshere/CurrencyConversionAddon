@@ -23,7 +23,7 @@ const quickRateInfoNode = document.getElementById("quickRateInfo");
 const currencyNames = new Intl.DisplayNames([navigator.language || "en"], { type: "currency" });
 const M = CurrencyMessages;
 const CONTENT_SCRIPT_FILES = [
-  "shared/currencies.js", "shared/messages.js", "content/number-parser.js",
+  "shared/browser-api.js", "shared/currencies.js", "shared/messages.js", "content/number-parser.js",
   "content/detector.js", "content/converter.js", "content/page-ui.js", "content/content.js"
 ];
 const CONTENT_STYLE_FILES = ["content/styles.css"];
@@ -46,15 +46,15 @@ const currencyComboboxes = [
 initialize().catch((error) => setStatus(error.message || "Could not initialize the extension.", "error"));
 
 async function initialize() {
-  [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  [activeTab] = await ExtensionAPI.tabs.query({ active: true, currentWindow: true });
   const origin = getActiveOrigin();
   const [currenciesResult, settingsResult, statusResult, localPreferences] = await Promise.all([
-    chrome.runtime.sendMessage({ type: M.GET_CURRENCIES }),
-    chrome.runtime.sendMessage({ type: M.GET_SETTINGS }),
+    ExtensionAPI.runtime.sendMessage({ type: M.GET_CURRENCIES }),
+    ExtensionAPI.runtime.sendMessage({ type: M.GET_SETTINGS }),
     origin
-      ? chrome.runtime.sendMessage({ type: M.GET_SITE_STATUS, origin })
+      ? ExtensionAPI.runtime.sendMessage({ type: M.GET_SITE_STATUS, origin })
       : Promise.resolve({ ok: false, remembered: false }),
-    chrome.storage.local.get("recentCurrencies")
+    ExtensionAPI.storage.local.get("recentCurrencies")
   ]);
 
   if (!currenciesResult?.ok || !settingsResult?.ok) throw new Error("Could not load extension settings.");
@@ -77,7 +77,7 @@ async function initialize() {
   let badgeText = "";
   if (activeTab?.id) {
     try {
-      badgeText = await chrome.action.getBadgeText({ tabId: activeTab.id });
+      badgeText = await ExtensionAPI.action.getBadgeText({ tabId: activeTab.id });
     } catch (_error) {
       // Restricted pages may not expose tab-scoped action state.
     }
@@ -299,7 +299,7 @@ async function saveSettings() {
     displayMode: displayModeSelect.value,
     showPagePrompt: showPagePromptInput.checked
   };
-  const result = await chrome.runtime.sendMessage({ type: M.UPDATE_SETTINGS, payload });
+  const result = await ExtensionAPI.runtime.sendMessage({ type: M.UPDATE_SETTINGS, payload });
   if (!result?.ok) {
     if (result?.settings) {
       fromCurrencySelect.value = result.settings.fromCurrency;
@@ -359,20 +359,20 @@ async function handleRememberSiteChange() {
   rememberSiteInput.disabled = true;
   try {
     if (rememberSiteInput.checked) {
-      const granted = await chrome.permissions.request({ origins: [siteStatus.pattern] });
+      const granted = await ExtensionAPI.permissions.request({ origins: [siteStatus.pattern] });
       if (!granted) {
         rememberSiteInput.checked = false;
         setStatus("Site access was not granted.", "error");
         return;
       }
-      const result = await chrome.runtime.sendMessage({ type: M.REMEMBER_SITE, origin });
+      const result = await ExtensionAPI.runtime.sendMessage({ type: M.REMEMBER_SITE, origin });
       if (!result?.ok) throw new Error(result?.error || "Could not remember this site.");
       siteStatus.remembered = true;
       clearSiteButton.hidden = false;
       updateSecondaryActions();
       setStatus("This website will convert automatically.", "success");
     } else {
-      const result = await chrome.runtime.sendMessage({ type: M.FORGET_SITE, origin });
+      const result = await ExtensionAPI.runtime.sendMessage({ type: M.FORGET_SITE, origin });
       if (!result?.ok) throw new Error(result?.error || "Could not forget this site.");
       siteStatus.remembered = false;
       clearSiteButton.hidden = true;
@@ -528,7 +528,7 @@ async function calculateQuickConversion() {
     availableQuoteCurrencies = null;
     availableRatesSource = sourceCurrency;
   }
-  const result = await chrome.runtime.sendMessage({ type: M.GET_RATES, baseCurrency: sourceCurrency });
+  const result = await ExtensionAPI.runtime.sendMessage({ type: M.GET_RATES, baseCurrency: sourceCurrency });
   if (requestId !== quickConversionRequestId) return;
   if (result?.ok) {
     availableQuoteCurrencies = new Set(Object.keys(result.rates || {}));
@@ -592,7 +592,7 @@ async function storeRecentCurrencies(settings) {
   const candidates = [settings.fromCurrency, settings.toCurrency, ...recentCurrencies]
     .filter((currency) => currency !== "AUTO");
   recentCurrencies = [...new Set(candidates)].slice(0, 6);
-  await chrome.storage.local.set({ recentCurrencies });
+  await ExtensionAPI.storage.local.set({ recentCurrencies });
   populateCurrencyLists();
 }
 
@@ -600,20 +600,20 @@ async function sendToActivePage(type, payload = {}) {
   if (!activeTab?.id) return { ok: false, error: "No active tab found." };
   try {
     await ensureContentScripts(activeTab.id);
-    return await chrome.tabs.sendMessage(activeTab.id, { type, ...payload }) || {
+    return await ExtensionAPI.tabs.sendMessage(activeTab.id, { type, ...payload }) || {
       ok: false,
       error: "The page did not respond. Reload it once and try again."
     };
   } catch (_error) {
-    return { ok: false, error: "Chrome does not allow extensions on this page." };
+    return { ok: false, error: "The browser does not allow extensions on this page." };
   }
 }
 
 async function ensureContentScripts(tabId) {
   try {
-    await chrome.tabs.sendMessage(tabId, { type: M.CONTENT_READY });
+    await ExtensionAPI.tabs.sendMessage(tabId, { type: M.CONTENT_READY });
   } catch (_error) {
-    await chrome.scripting.insertCSS({ target: { tabId }, files: CONTENT_STYLE_FILES });
-    await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+    await ExtensionAPI.scripting.insertCSS({ target: { tabId }, files: CONTENT_STYLE_FILES });
+    await ExtensionAPI.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
   }
 }

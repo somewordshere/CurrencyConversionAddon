@@ -22,7 +22,7 @@ function createRateService({ cache, fetchImpl }) {
         return { currencies: ["EUR", "USD", "PLN"].map((code) => ({ code })) };
       }
     },
-    chrome: {
+    ExtensionAPI: {
       storage: {
         local: {
           async get() { return { ratesCache: storage.ratesCache }; },
@@ -32,7 +32,7 @@ function createRateService({ cache, fetchImpl }) {
     }
   });
   vm.runInContext(
-    fs.readFileSync(path.resolve(__dirname, "../background/rates.js"), "utf8"),
+    fs.readFileSync(path.resolve(__dirname, "../src/background/rates.js"), "utf8"),
     context
   );
   return { service: context.CurrencyRateService, storage };
