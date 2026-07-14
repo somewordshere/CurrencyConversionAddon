@@ -72,6 +72,40 @@ Open **Page options** and enable **Always convert this website**. Chrome grants 
 4. **Local rendering:** converted values are inserted beside the original prices or replace them according to the selected display mode.
 5. **Dynamic updates:** bounded background scans handle prices that appear after the initial page load without continuously rescanning the entire document.
 
+## 🎯 Currency detection confidence
+
+AUTO detection gives every supported currency a weighted score based on evidence found on the page:
+
+$$
+S(c)=100M+100J+75E+\min(30,10V)+20D+40K+15L
+$$
+
+| Signal | Meaning | Weight |
+| --- | --- | ---: |
+| $M$ | Matching structured price metadata | 100 per match |
+| $J$ | Matching JSON-LD `priceCurrency` | 100 per match |
+| $E$ | Matching currency in embedded shop data | 75 per match |
+| $V$ | Visible ISO currency-code occurrences | 10 each, up to 30 |
+| $D$ | Matching country-code domain | 20 |
+| $K$ | Matching canonical country-code domain | 40 |
+| $L$ | Matching page language or region | 15 |
+
+The currency with the highest score becomes the AUTO candidate. The runner-up score is also considered so that two competing currencies do not produce a misleadingly confident result.
+
+- **High confidence:** the winning score is at least 70 and at least 20 points above second place.
+- **Medium confidence:** the winning score is at least 30 and at least 10 points above second place.
+- **Low confidence:** the evidence does not meet either threshold, so page conversion asks for a manually selected source currency.
+
+These values are heuristic confidence scores, not statistically calibrated probabilities. A probability-like estimate can be produced with an unknown-currency baseline:
+
+$$
+P(c)=\frac{e^{S(c)/T}}{e^{U/T}+\sum_k e^{S(k)/T}}
+$$
+
+Suggested starting parameters are $T=20$, which controls how strongly score differences affect the result, and $U=30$, which represents **currency unknown**. The output should be described as a **detection confidence estimate** until it has been calibrated against a large labeled collection of real webpages.
+
+For example, if JSON-LD identifies EUR, the page uses a `.de` domain, and its language is `de-DE`, EUR receives $100+20+15=135$ points. If USD appears only twice as visible text, USD receives 20 points. With the suggested parameters, the resulting EUR confidence estimate is approximately 99%.
+
 ## 🔐 Privacy and permissions
 
 Page contents, highlighted text, price values, visited URLs, and browsing history are not sent to the developer or the exchange-rate provider. The extension stores preferences, recent currency choices, cached rates, and only the website origins you deliberately approve.
@@ -169,4 +203,3 @@ tests/        Unit, regression, fixture, service-worker, and Playwright tests
 ## 📄 License
 
 Currency Converter Pro is released under the [MIT License](LICENSE).
-
