@@ -4,7 +4,9 @@ Currency Converter Pro is a privacy-focused Chrome and Firefox extension that co
 
 **Current version:** 1.6.0 · **Platforms:** Chrome and Firefox Manifest V3 · **License:** MIT
 
-[🛍️ Chrome Web Store](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) · [📦 Chrome build](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip) · [🦊 Firefox build](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip) · [🔒 Privacy policy](privacy-policy.md) · [📝 Changelog](CHANGELOG.md)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) · [📦 Chrome build](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip) · [🦊 Firefox build](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip) · [🔒 Privacy policy](privacy-policy.md)
+
+**[View the complete changelog →](CHANGELOG.md)**
 
 ## 📸 Screenshots
 
@@ -12,45 +14,19 @@ Currency Converter Pro is a privacy-focused Chrome and Firefox extension that co
 | --- | --- |
 | ![Currency Converter Pro popup converting Amazon prices](screenshots/current-popup.png) | ![A shopping page with prices converted by Currency Converter Pro](screenshots/page-conversion.png) |
 
-## ✨ What the extension can do
+## Features
 
-- 🔎 Search source and target currencies by code or name
-- 🧭 Detect a page's currency automatically with conservative **AUTO** detection
-- 🛒 Convert recognized prices across the current shopping page
-- 🖱️ Convert one highlighted price without changing the rest of the page
-- 🧮 Convert a typed amount directly inside the popup
-- ⚡ Follow prices added later by dynamic and single-page websites
-- 👀 Show the original and converted prices together, or show only the conversion
-- 📌 Remember only websites you explicitly approve for automatic conversion
-- ⌨️ Convert the active page with `Ctrl+Shift+Y` (`Command+Shift+Y` on macOS)
-- 📴 Use clearly labeled cached rates temporarily when the live provider is unavailable
-- 🛡️ Work without advertisements, analytics, or remotely hosted code
+- Search currencies by name or ISO code, with conservative **AUTO** detection when the source currency is unknown.
+- Convert a complete shopping page, one highlighted price, or an amount typed into the popup.
+- Handle prices added later by dynamic and single-page websites.
+- Show converted prices beside the originals or replace them, with exact undo support.
+- Remember only websites you explicitly approve and support a keyboard conversion shortcut.
+- Continue temporarily with clearly labeled cached rates when the provider is unavailable.
 
-## 🚀 Installation
+## Installation
 
-### Install from the Chrome Web Store
-
-Open the [Currency Converter Pro listing](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) and select **Add to Chrome**.
-
-### Load the Chrome release manually
-
-1. Download the [latest Chrome ZIP](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip).
-2. Extract the ZIP to a permanent folder.
-3. Open `chrome://extensions` in Chrome.
-4. Enable **Developer mode**.
-5. Select **Load unpacked**.
-6. Choose the extracted folder containing `manifest.json`.
-
-### Test the Firefox release manually
-
-The repository package is unsigned and intended for Mozilla Add-ons submission or temporary local testing. Firefox 140 or newer is required.
-
-1. Download and extract the [latest Firefox ZIP](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip).
-2. Open `about:debugging#/runtime/this-firefox`.
-3. Select **Load Temporary Add-on**.
-4. Choose the extracted `manifest.json`.
-
-Temporary add-ons are removed when Firefox closes. A normal persistent installation requires a Mozilla-signed package.
+- **Store installation:** Install Currency Converter Pro directly from the [Chrome Web Store](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk).
+- **Manual installation:** Download the latest [Chrome build](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip) or [Firefox build](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
 
 ## 🧭 How to use it
 
@@ -119,7 +95,9 @@ For example, if JSON-LD identifies EUR, the page uses a `.de` domain, and its la
 
 ## 🔐 Privacy and permissions
 
-Page contents, highlighted text, price values, visited URLs, and browsing history are not sent to the developer or the exchange-rate provider. The extension stores preferences, recent currency choices, cached rates, and only the website origins you deliberately approve.
+All webpage scanning, price detection, conversion, and rendering happen locally inside the browser. The extension never transmits page contents, highlighted text, price values, visited URLs, or browsing history.
+
+The only external requests retrieve the currency catalog and reference rates from Frankfurter using ISO currency codes. No webpage text, prices, URLs, analytics, tracking identifiers, or advertising data is included. As with any HTTPS request, the service may receive ordinary network metadata such as an IP address. Preferences, recent currency choices, cached rates, and deliberately approved website origins remain in browser storage.
 
 | Permission | Why it is needed |
 | --- | --- |
@@ -143,38 +121,10 @@ Read the complete [privacy policy](privacy-policy.md) for retention, deletion, a
 
 ## ⚠️ Limitations
 
-- Browser-protected pages such as `chrome://extensions` and `about:` pages cannot be modified.
 - Prices inside images, closed shadow roots, and inaccessible cross-origin frames cannot be converted.
 - Some unusual or heavily scripted price layouts may need a manually selected source currency.
 - Cached rates warn after 48 hours and are never used after seven days.
 - Rates are intended for convenient price comparison and may differ from bank or card-provider rates.
-
-## 🧪 Testing
-
-The project requires Node.js 20 or newer.
-
-```bash
-npm ci
-npm run verify
-npm run lint:firefox
-```
-
-`npm run verify` checks the shared Manifest V3 configuration and browser overrides, validates runtime files, performs JavaScript syntax checks, and runs the unit and regression test suite for parsing, detection, formatting, settings, permissions, catalogs, caching, timeouts, and background behavior. `npm run lint:firefox` builds the Firefox target and validates it with Mozilla's `web-ext` tool.
-
-To run the real extension in Chromium:
-
-```bash
-npx playwright install chromium
-npm run test:browser
-```
-
-The Playwright suite loads the generated Chrome artifact and verifies popup initialization, production script injection, settings persistence, dynamic-price conversion, cached-rate metadata, and exact undo behavior.
-
-To open the generated Firefox build in a temporary development profile:
-
-```bash
-npm run run:firefox
-```
 
 ## 🛠️ Building a release
 
