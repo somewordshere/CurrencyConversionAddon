@@ -12,7 +12,7 @@ downloaded websites/
 # Internal review material and generated references
 audit/
 structure.txt
-store/privacy-policy.md
+store/
 
 # Keep generated unpacked builds out of the repository
 release/unpacked/

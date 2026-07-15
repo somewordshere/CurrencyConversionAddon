@@ -226,7 +226,6 @@ dist/         Generated unpacked browser builds (not committed)
 release/      Versioned Chrome and Firefox release archives
 screenshots/  Images used by this README
 scripts/      Manifest composition, validation, icon, and release utilities
-store/        Browser-specific Store listing and privacy documentation
 tests/        Unit, regression, fixture, service-worker, and Playwright tests
 ```
 
