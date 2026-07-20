@@ -4,7 +4,7 @@ Currency Converter Pro is a privacy-focused Chrome and Firefox extension that co
 
 **Current version:** 1.6.0 · **Platforms:** Chrome and Firefox Manifest V3 · **License:** MIT
 
-[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) · [📦 Chrome build](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip) · [🦊 Firefox build](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip) · [🔒 Privacy policy](privacy-policy.md)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox_Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/) · [📦 Chrome build](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip) · [📦 Firefox build](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip) · [🔒 Privacy policy](privacy-policy.md)
 
 **[View the complete changelog →](CHANGELOG.md)**
 
@@ -25,7 +25,7 @@ Currency Converter Pro is a privacy-focused Chrome and Firefox extension that co
 
 ## Installation
 
-- **Store installation:** Install Currency Converter Pro directly from the [Chrome Web Store](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk).
+- **Store installation:** Install Currency Converter Pro from the [Chrome Web Store](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) or [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/).
 - **Manual installation:** Download the latest [Chrome build](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip) or [Firefox build](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
 
 ## 🧭 How to use it
