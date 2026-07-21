@@ -2,6 +2,28 @@
 
 All notable changes to Currency Converter Pro are documented here. Dates reflect the release preparation date for each version.
 
+## 1.6.2 - 2026-07-21
+
+### Added
+
+- Added Chromium regression coverage for Allegro-style prices that split the whole amount and fractional digits across nested elements.
+- Added detector coverage for incomplete decimal fragments and ambiguous currency-marker text near a valid price.
+
+### Changed
+
+- Kept locally saved website captures out of source control while retaining small purpose-built regression fixtures.
+- Made linked product titles conservative during full-page conversion while preserving explicit selection conversion.
+
+### Fixed
+
+- Fixed Allegro prices such as `PLN 79.` plus a separate `00` node so the complete `PLN 79.00` price is converted as one value.
+- Prevented model names such as `R134` from causing a second converted amount to be appended to an entire product row.
+- Prevented currency values contained in linked product titles from being mistaken for sale prices.
+
+### Packaging
+
+- Built separate 1.6.2 Chrome and Firefox upload archives containing runtime files only.
+
 ## 1.6.1 - 2026-07-21
 
 ### Added

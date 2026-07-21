@@ -83,6 +83,28 @@ assert.equal(
   "word-like currency codes in product names must not be converted in AUTO mode"
 );
 
+const linkedProductTitle = element("product-name", "Netflix Gift Card 80 PLN | Code | Top-up");
+linkedProductTitle.closest = (selector) => selector === "a[href]" ? linkedProductTitle : null;
+assert.equal(
+  detector.findMatchesForContext(
+    linkedProductTitle.textContent,
+    linkedProductTitle,
+    settings
+  ).length,
+  0,
+  "currency amounts inside linked product titles must not be converted as sale prices"
+);
+assert.equal(
+  detector.findMatchesForContext(
+    linkedProductTitle.textContent,
+    linkedProductTitle,
+    settings,
+    { selection: true }
+  ).length,
+  1,
+  "explicitly selected currency text inside a product title must remain convertible"
+);
+
 for (const nonPrice of [
   "May 14 - 16",
   "4.8 out of 5",
@@ -146,6 +168,21 @@ const compactCodeMatch = detector.findCurrencyMatches("PLN46.19", {
 assert.equal(compactCodeMatch.length, 1);
 assert.equal(compactCodeMatch[0].currency, "PLN");
 assert.equal(compactCodeMatch[0].amount, 46.19);
+
+assert.equal(
+  detector.findCurrencyMatches("PLN\u00a079.", {
+    pageDetection: { currency: "PLN", confidence: "high" }
+  }).length,
+  0,
+  "a price fragment ending at its decimal separator must wait for its fraction sibling"
+);
+const completeSplitDecimal = detector.findCurrencyMatches("PLN\u00a079.00", {
+  pageDetection: { currency: "PLN", confidence: "high" }
+});
+assert.equal(completeSplitDecimal.length, 1);
+assert.equal(completeSplitDecimal[0].amount, 79);
+assert.equal(detector.hasCurrencyMarker("PLN\u00a079.", "PLN"), true);
+assert.equal(detector.hasCurrencyMarker("R134 refrigerant", "PLN"), false);
 
 const providerCatalogCodeMatch = detector.findCurrencyMatches("AFN 250", {
   forcedCurrency: "AFN",

@@ -52,6 +52,7 @@
       pageDetection: detection
     }).filter((match) =>
       match.currency !== settings.toCurrency &&
+      (selection || !isLikelyLinkedTitle(text, element, match)) &&
       (
         match.strength !== "code" ||
         !WORD_LIKE_CURRENCY_CODES.has(match.currency) ||
@@ -62,6 +63,13 @@
         )
       )
     );
+  }
+
+  function isLikelyLinkedTitle(text, element, match) {
+    const link = element?.closest?.("a[href]");
+    if (!link || isLikelyPriceElement(element)) return false;
+    const surroundingText = `${text.slice(0, match.index)} ${text.slice(match.index + match.raw.length)}`;
+    return (surroundingText.match(/\p{L}{2,}/gu) || []).length >= 2;
   }
 
   function findCurrencyMatches(
@@ -140,6 +148,16 @@
     ]);
   }
 
+  function hasCurrencyMarker(text, currency) {
+    const meta = CURRENCY_META[currency];
+    const markers = [currency, ...(meta?.symbols || [])];
+    const markerPattern = [...new Set(markers)]
+      .map(buildMarkerPattern)
+      .sort((a, b) => b.length - a.length)
+      .join("|");
+    return Boolean(markerPattern && new RegExp(`(?:${markerPattern})`, "iu").test(text || ""));
+  }
+
   function findMatchesWithMarkers(text, markers, currency, strength) {
     const markerPattern = [...new Set(markers)]
       .map(buildMarkerPattern)
@@ -151,7 +169,7 @@
     }
 
     const regex = new RegExp(
-      `(?:(?:${markerPattern})[\\s\\u00a0\\u202f]*${NUMBER_CAPTURE}(?![\\p{L}\\p{N}])|(?<![\\p{L}\\p{N}])${NUMBER_CAPTURE}[\\s\\u00a0\\u202f]*(?:${markerPattern}))`,
+      `(?:(?:${markerPattern})[\\s\\u00a0\\u202f]*${NUMBER_CAPTURE}(?![\\p{L}\\p{N}.,\\uFF0C\\uFF0E])|(?<![\\p{L}\\p{N}])${NUMBER_CAPTURE}[\\s\\u00a0\\u202f]*(?:${markerPattern}))`,
       "giu"
     );
     const results = [];
@@ -474,6 +492,7 @@
     getPageCurrencyDetection,
     findMatchesForContext,
     findCurrencyMatches,
+    hasCurrencyMarker,
     isLikelyPriceElement,
     describeDetectedCurrencies
   });

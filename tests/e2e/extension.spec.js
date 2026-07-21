@@ -9,6 +9,11 @@ const SPLIT_PRICE_HTML = fs.readFileSync(
   path.resolve(__dirname, "../fixtures/digitec-split-price.html"),
   "utf8"
 );
+const SPLIT_FRACTION_URL = "https://api.frankfurter.dev/allegro-split-fraction";
+const SPLIT_FRACTION_HTML = fs.readFileSync(
+  path.resolve(__dirname, "../fixtures/allegro-split-fraction.html"),
+  "utf8"
+);
 
 async function seedExtension(extensionWorker) {
   await extensionWorker.evaluate(async () => {
@@ -30,6 +35,7 @@ async function seedExtension(extensionWorker) {
         fetchedAt: new Date().toISOString(),
         currencies: [
           { code: "CHF", name: "Swiss Franc", symbol: "CHF", startDate: "1999-01-04", endDate: "2026-07-10" },
+          { code: "PLN", name: "Polish Zloty", symbol: "PLN", startDate: "1999-01-04", endDate: "2026-07-10" },
           { code: "AFN", name: "Afghan Afghani", symbol: "؋", startDate: "1999-01-01", endDate: "2026-07-10" },
           { code: "EUR", name: "Euro", symbol: "â‚¬", startDate: "1999-01-04", endDate: "2026-07-10" },
           { code: "USD", name: "United States Dollar", symbol: "$", startDate: "1999-01-04", endDate: "2026-07-10" }
@@ -41,14 +47,20 @@ async function seedExtension(extensionWorker) {
           USD: {
             fetchedAt: new Date().toISOString(),
             rateDate: "2026-07-10",
-            catalogSignature: "AFN,CHF,EUR,USD",
+            catalogSignature: "AFN,CHF,EUR,PLN,USD",
             rates: { USD: 1, EUR: 0.9 }
           },
           CHF: {
             fetchedAt: new Date().toISOString(),
             rateDate: "2026-07-10",
-            catalogSignature: "AFN,CHF,EUR,USD",
+            catalogSignature: "AFN,CHF,EUR,PLN,USD",
             rates: { CHF: 1, EUR: 1.08 }
+          },
+          PLN: {
+            fetchedAt: new Date().toISOString(),
+            rateDate: "2026-07-10",
+            catalogSignature: "AFN,CHF,EUR,PLN,USD",
+            rates: { PLN: 1, EUR: 0.235 }
           }
         }
       }
@@ -66,7 +78,7 @@ async function runPageCommand(extensionWorker, type, url = SHOP_URL) {
   }, { url, type });
 }
 
-test("converts a marked price split across neutral, obfuscated elements", async ({
+test("converts marked prices split across neutral, obfuscated elements", async ({
   context,
   extensionWorker
 }) => {
@@ -89,6 +101,30 @@ test("converts a marked price split across neutral, obfuscated elements", async 
   expect(conversion.count).toBe(1);
   expect(conversion.detectedCurrency).toBe("CHF");
   await expect(shop.locator("#digitec-price ccp-conversion")).toContainText("474");
+
+  const allegro = await context.newPage();
+  await allegro.route(SPLIT_FRACTION_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SPLIT_FRACTION_HTML
+  }));
+  await allegro.goto(SPLIT_FRACTION_URL);
+
+  const splitFractionConversion = await runPageCommand(
+    extensionWorker,
+    "RUN_SITE_CONVERSION",
+    SPLIT_FRACTION_URL
+  );
+  expect(splitFractionConversion.ok).toBe(true);
+  expect(splitFractionConversion.count).toBe(1);
+  expect(splitFractionConversion.detectedCurrency).toBe("PLN");
+  const allegroPrice = allegro.locator("#allegro-price");
+  expect(await allegroPrice.evaluate((element) =>
+    [...element.children].slice(0, 2).map((child) => child.textContent)
+  )).toEqual(["PLN\u00a079.", "00"]);
+  await expect(allegro.locator("#allegro-price > ccp-conversion")).toHaveCount(1);
+  await expect(allegro.locator("#allegro-row > ccp-conversion")).toHaveCount(0);
+  await expect(allegro.locator("#allegro-title ccp-conversion")).toHaveCount(0);
 });
 
 test("real extension popup, injection, dynamic conversion, and undo work together", async ({

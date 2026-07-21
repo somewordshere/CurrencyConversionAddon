@@ -263,14 +263,25 @@
   }
 
   function collectSplitCandidateForTextNode(node, splitCandidates) {
-    if (!QUICK_CURRENCY_MARKER_PATTERN.test(node.nodeValue || "")) return;
+    const nodeText = node.nodeValue || "";
+    if (
+      !node.parentElement ||
+      SKIP_TAGS.has(node.parentElement.tagName) ||
+      !QUICK_CURRENCY_MARKER_PATTERN.test(nodeText)
+    ) return;
+    if (CurrencyDetector.findCurrencyMatches(nodeText, {
+      pageDetection: CurrencyDetector.getPageCurrencyDetection()
+    }).length) return;
 
     let element = node.parentElement;
     for (let level = 0; element && level < 3; level += 1, element = element.parentElement) {
       const text = element.textContent?.trim();
       if (!text || text.length > 100) continue;
       if (!POSSIBLE_PRICE_TEXT_PATTERN.test(text) || element.childElementCount === 0) continue;
-      if (!CurrencyDetector.findMatchesForContext(text, element, settings).length) continue;
+      const matches = CurrencyDetector.findMatchesForContext(text, element, settings);
+      if (!matches.some((match) => CurrencyDetector.hasCurrencyMarker(nodeText, match.currency))) {
+        continue;
+      }
       splitCandidates.add(element);
       return;
     }
