@@ -7,7 +7,7 @@ const DEFAULT_SETTINGS = Object.freeze({
 });
 const SITE_PREFERENCES_KEY = "autoConvertSites";
 const M = CurrencyMessages;
-const CONTENT_SCRIPT_FILES = [
+const REGISTERED_CONTENT_SCRIPT_FILES = [
   "shared/browser-api.js",
   "shared/currencies.js",
   "shared/messages.js",
@@ -17,7 +17,9 @@ const CONTENT_SCRIPT_FILES = [
   "content/page-ui.js",
   "content/content.js"
 ];
-const CONTENT_STYLE_FILES = ["content/styles.css"];
+const REGISTERED_CONTENT_STYLE_FILES = ["content/styles.css"];
+const INJECTED_CONTENT_SCRIPT_FILES = REGISTERED_CONTENT_SCRIPT_FILES.map((file) => `/${file}`);
+const INJECTED_CONTENT_STYLE_FILES = REGISTERED_CONTENT_STYLE_FILES.map((file) => `/${file}`);
 
 ExtensionAPI.runtime.onInstalled.addListener(async () => {
   try {
@@ -199,8 +201,12 @@ async function setBadge(tabId, count) {
 }
 
 async function getSiteStatus(originValue) {
+  const unsupportedPage = CurrencyPageAccess.unsupportedPageMessage(originValue);
+  if (unsupportedPage) {
+    return { ok: false, remembered: false, error: unsupportedPage };
+  }
   const site = normalizeSite(originValue);
-  if (!site) return { ok: false, remembered: false, error: "This page cannot be remembered." };
+  if (!site) return { ok: false, remembered: false, error: siteMemoryError(originValue) };
 
   const preferences = await getSitePreferences();
   const hasPermission = await ExtensionAPI.permissions.contains({ origins: [site.pattern] });
@@ -213,8 +219,10 @@ async function getSiteStatus(originValue) {
 }
 
 async function rememberSite(originValue) {
+  const unsupportedPage = CurrencyPageAccess.unsupportedPageMessage(originValue);
+  if (unsupportedPage) return { ok: false, error: unsupportedPage };
   const site = normalizeSite(originValue);
-  if (!site) return { ok: false, error: "Only normal HTTP and HTTPS websites can be remembered." };
+  if (!site) return { ok: false, error: siteMemoryError(originValue) };
 
   const hasPermission = await ExtensionAPI.permissions.contains({ origins: [site.pattern] });
   if (!hasPermission) {
@@ -250,6 +258,7 @@ async function reconcileRememberedSites() {
 
   for (const [key, remembered] of Object.entries(preferences)) {
     if (!remembered) continue;
+    if (CurrencyPageAccess.unsupportedPageMessage(key)) continue;
     const site = normalizeSite(key);
     if (!site) continue;
     const hasPermission = await ExtensionAPI.permissions.contains({ origins: [site.pattern] });
@@ -273,8 +282,8 @@ async function registerSiteContentScript(site) {
   const registration = {
     id,
     matches: [site.pattern],
-    js: CONTENT_SCRIPT_FILES,
-    css: CONTENT_STYLE_FILES,
+    js: REGISTERED_CONTENT_SCRIPT_FILES,
+    css: REGISTERED_CONTENT_STYLE_FILES,
     runAt: "document_idle",
     allFrames: false,
     persistAcrossSessions: true
@@ -302,6 +311,7 @@ function normalizeSite(value) {
   try {
     const url = new URL(value);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (isFirefoxBuild() && url.port) return null;
     return {
       origin: url.origin,
       hostname: url.hostname.toLowerCase().replace(/^www\./, ""),
@@ -310,6 +320,25 @@ function normalizeSite(value) {
   } catch (_error) {
     return null;
   }
+}
+
+function siteMemoryError(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return "Only normal HTTP and HTTPS websites can be remembered.";
+    }
+    if (isFirefoxBuild() && url.port) {
+      return "Firefox cannot enable automatic access for websites that use a non-default port. You can still convert this page manually.";
+    }
+  } catch (_error) {
+    // Fall through to the generic invalid-page explanation.
+  }
+  return "This page cannot be remembered.";
+}
+
+function isFirefoxBuild() {
+  return Boolean(ExtensionAPI.runtime.getManifest()?.browser_specific_settings?.gecko);
 }
 
 function siteScriptId(origin) {
@@ -332,11 +361,11 @@ async function ensureContentScripts(tabId) {
   } catch (_error) {
     await ExtensionAPI.scripting.insertCSS({
       target: { tabId },
-      files: CONTENT_STYLE_FILES
+      files: INJECTED_CONTENT_STYLE_FILES
     });
     await ExtensionAPI.scripting.executeScript({
       target: { tabId },
-      files: CONTENT_SCRIPT_FILES
+      files: INJECTED_CONTENT_SCRIPT_FILES
     });
   }
 }

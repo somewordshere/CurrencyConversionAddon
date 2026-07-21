@@ -9,6 +9,7 @@ const swapButton = document.getElementById("swapCurrencies");
 const displayModeSelect = document.getElementById("displayMode");
 const showPagePromptInput = document.getElementById("showPagePrompt");
 const rememberSiteInput = document.getElementById("rememberSite");
+const rememberSiteHelpNode = document.getElementById("rememberSiteHelp");
 const convertSiteButton = document.getElementById("convertSite");
 const clearPageButton = document.getElementById("clearPage");
 const clearSiteButton = document.getElementById("clearSite");
@@ -23,10 +24,10 @@ const quickRateInfoNode = document.getElementById("quickRateInfo");
 const currencyNames = new Intl.DisplayNames([navigator.language || "en"], { type: "currency" });
 const M = CurrencyMessages;
 const CONTENT_SCRIPT_FILES = [
-  "shared/browser-api.js", "shared/currencies.js", "shared/messages.js", "content/number-parser.js",
-  "content/detector.js", "content/converter.js", "content/page-ui.js", "content/content.js"
+  "/shared/browser-api.js", "/shared/currencies.js", "/shared/messages.js", "/content/number-parser.js",
+  "/content/detector.js", "/content/converter.js", "/content/page-ui.js", "/content/content.js"
 ];
-const CONTENT_STYLE_FILES = ["content/styles.css"];
+const CONTENT_STYLE_FILES = ["/content/styles.css"];
 let activeTab = null;
 let siteStatus = null;
 let lastDetectedCurrency = null;
@@ -38,6 +39,7 @@ let availableRatesSource = null;
 let catalogWarning = null;
 let quickConversionTimer = null;
 let quickConversionRequestId = 0;
+const defaultRememberSiteHelp = rememberSiteHelpNode.textContent;
 const currencyComboboxes = [
   createCurrencyCombobox(fromCurrencySelect, fromCurrencySearch, fromCurrencyList),
   createCurrencyCombobox(toCurrencySelect, toCurrencySearch, toCurrencyList)
@@ -48,11 +50,12 @@ initialize().catch((error) => setStatus(error.message || "Could not initialize t
 async function initialize() {
   [activeTab] = await ExtensionAPI.tabs.query({ active: true, currentWindow: true });
   const origin = getActiveOrigin();
+  const activePageUrl = activeTab?.url || origin;
   const [currenciesResult, settingsResult, statusResult, localPreferences] = await Promise.all([
     ExtensionAPI.runtime.sendMessage({ type: M.GET_CURRENCIES }),
     ExtensionAPI.runtime.sendMessage({ type: M.GET_SETTINGS }),
-    origin
-      ? ExtensionAPI.runtime.sendMessage({ type: M.GET_SITE_STATUS, origin })
+    activePageUrl
+      ? ExtensionAPI.runtime.sendMessage({ type: M.GET_SITE_STATUS, origin: activePageUrl })
       : Promise.resolve({ ok: false, remembered: false }),
     ExtensionAPI.storage.local.get("recentCurrencies")
   ]);
@@ -73,6 +76,12 @@ async function initialize() {
   siteStatus = statusResult;
   rememberSiteInput.checked = Boolean(statusResult?.remembered);
   rememberSiteInput.disabled = !statusResult?.ok;
+  rememberSiteInput.title = statusResult?.ok
+    ? ""
+    : statusResult?.error || "This page cannot be remembered.";
+  rememberSiteHelpNode.textContent = statusResult?.ok
+    ? defaultRememberSiteHelp
+    : statusResult?.error || "This page cannot be remembered.";
   clearSiteButton.hidden = !statusResult?.remembered;
   let badgeText = "";
   if (activeTab?.id) {
@@ -598,22 +607,41 @@ async function storeRecentCurrencies(settings) {
 
 async function sendToActivePage(type, payload = {}) {
   if (!activeTab?.id) return { ok: false, error: "No active tab found." };
+  const unsupportedPage = CurrencyPageAccess.unsupportedPageMessage(activeTab.url);
+  if (unsupportedPage) return { ok: false, error: unsupportedPage };
   try {
     await ensureContentScripts(activeTab.id);
     return await ExtensionAPI.tabs.sendMessage(activeTab.id, { type, ...payload }) || {
       ok: false,
       error: "The page did not respond. Reload it once and try again."
     };
-  } catch (_error) {
-    return { ok: false, error: "The browser does not allow extensions on this page." };
+  } catch (error) {
+    console.error("Currency Converter Pro could not reach the active page.", error);
+    return { ok: false, error: CurrencyPageAccess.describeFailure(activeTab, error) };
   }
 }
 
 async function ensureContentScripts(tabId) {
   try {
     await ExtensionAPI.tabs.sendMessage(tabId, { type: M.CONTENT_READY });
+    return;
   } catch (_error) {
-    await ExtensionAPI.scripting.insertCSS({ target: { tabId }, files: CONTENT_STYLE_FILES });
-    await ExtensionAPI.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+    // The converter is not loaded in this document yet.
   }
+
+  try {
+    await ExtensionAPI.scripting.insertCSS({ target: { tabId }, files: CONTENT_STYLE_FILES });
+  } catch (error) {
+    throw new Error(`The page styles could not be loaded: ${errorMessage(error)}`);
+  }
+
+  try {
+    await ExtensionAPI.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+  } catch (error) {
+    throw new Error(`The page converter could not be loaded: ${errorMessage(error)}`);
+  }
+}
+
+function errorMessage(error) {
+  return error instanceof Error && error.message ? error.message : String(error || "Unknown browser error");
 }

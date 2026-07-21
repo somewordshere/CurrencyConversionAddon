@@ -2,6 +2,29 @@
 
 All notable changes to Currency Converter Pro are documented here. Dates reflect the release preparation date for each version.
 
+## 1.6.1 - 2026-07-21
+
+### Added
+
+- Added a real Firefox browser test that installs the generated add-on, grants temporary page access from the toolbar, converts a live fixture page, and verifies exact undo behavior.
+- Added regression coverage for Swiss prices whose currency label and amount are split across neutral, obfuscated elements.
+
+### Changed
+
+- Improved page-access diagnostics so protected Mozilla pages, browser-internal pages, PDF viewers, and genuine injection failures receive distinct explanations.
+- Disabled remembered-site controls where Firefox cannot register the required origin pattern, while preserving one-click manual conversion.
+- Added Firefox runtime coverage to the continuous-integration verification workflow.
+
+### Fixed
+
+- Fixed Chrome conversion on Digitec and similarly structured shops by recognizing marked prices even when the website splits `CHF` and the numeric amount into separate text nodes without semantic price attributes.
+- Fixed one-off Firefox content-script injection by using extension-root paths while retaining relative paths for persistent content-script registration.
+- Prevented a failed stylesheet injection from being hidden by the later script-injection attempt.
+
+### Packaging
+
+- Built separate 1.6.1 Chrome and Firefox upload archives containing runtime files only.
+
 ## 1.6.0 - 2026-07-14
 
 ### Added

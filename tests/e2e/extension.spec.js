@@ -4,6 +4,11 @@ const { test, expect } = require("./fixtures");
 
 const SHOP_URL = "https://api.frankfurter.dev/test-shop";
 const SHOP_HTML = fs.readFileSync(path.resolve(__dirname, "../fixtures/shop.html"), "utf8");
+const SPLIT_PRICE_URL = "https://api.frankfurter.dev/digitec-split-price";
+const SPLIT_PRICE_HTML = fs.readFileSync(
+  path.resolve(__dirname, "../fixtures/digitec-split-price.html"),
+  "utf8"
+);
 
 async function seedExtension(extensionWorker) {
   await extensionWorker.evaluate(async () => {
@@ -24,6 +29,7 @@ async function seedExtension(extensionWorker) {
         version: 1,
         fetchedAt: new Date().toISOString(),
         currencies: [
+          { code: "CHF", name: "Swiss Franc", symbol: "CHF", startDate: "1999-01-04", endDate: "2026-07-10" },
           { code: "AFN", name: "Afghan Afghani", symbol: "؋", startDate: "1999-01-01", endDate: "2026-07-10" },
           { code: "EUR", name: "Euro", symbol: "â‚¬", startDate: "1999-01-04", endDate: "2026-07-10" },
           { code: "USD", name: "United States Dollar", symbol: "$", startDate: "1999-01-04", endDate: "2026-07-10" }
@@ -35,8 +41,14 @@ async function seedExtension(extensionWorker) {
           USD: {
             fetchedAt: new Date().toISOString(),
             rateDate: "2026-07-10",
-            catalogSignature: "AFN,EUR,USD",
+            catalogSignature: "AFN,CHF,EUR,USD",
             rates: { USD: 1, EUR: 0.9 }
+          },
+          CHF: {
+            fetchedAt: new Date().toISOString(),
+            rateDate: "2026-07-10",
+            catalogSignature: "AFN,CHF,EUR,USD",
+            rates: { CHF: 1, EUR: 1.08 }
           }
         }
       }
@@ -44,15 +56,40 @@ async function seedExtension(extensionWorker) {
   });
 }
 
-async function runPageCommand(extensionWorker, type) {
+async function runPageCommand(extensionWorker, type, url = SHOP_URL) {
   return extensionWorker.evaluate(async ({ url, type }) => {
     const tabs = await chrome.tabs.query({});
     const tab = tabs.find((candidate) => candidate.url === url);
-    if (!tab?.id) throw new Error(`Could not find test shop tab: ${url}`);
+    if (!tab?.id) throw new Error(`Could not find test page tab: ${url}`);
     await ensureContentScripts(tab.id);
     return chrome.tabs.sendMessage(tab.id, { type });
-  }, { url: SHOP_URL, type });
+  }, { url, type });
 }
+
+test("converts a marked price split across neutral, obfuscated elements", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker);
+
+  const shop = await context.newPage();
+  await shop.route(SPLIT_PRICE_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SPLIT_PRICE_HTML
+  }));
+  await shop.goto(SPLIT_PRICE_URL);
+
+  const conversion = await runPageCommand(
+    extensionWorker,
+    "RUN_SITE_CONVERSION",
+    SPLIT_PRICE_URL
+  );
+  expect(conversion.ok).toBe(true);
+  expect(conversion.count).toBe(1);
+  expect(conversion.detectedCurrency).toBe("CHF");
+  await expect(shop.locator("#digitec-price ccp-conversion")).toContainText("474");
+});
 
 test("real extension popup, injection, dynamic conversion, and undo work together", async ({
   context,

@@ -1,6 +1,6 @@
 {
   "name": "currency-converter-pro-extension",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "private": true,
   "description": "Privacy-focused Manifest V3 currency conversion extension",
   "scripts": {
@@ -14,6 +14,7 @@
     "run:firefox": "npm run prepare:firefox && web-ext run --source-dir dist/firefox",
     "test:browser": "npm run prepare:chrome && playwright test",
     "test:browser:headed": "npm run prepare:chrome && playwright test --headed",
+    "test:browser:firefox": "npm run prepare:firefox && node --test tests/firefox/runtime.js",
     "check": "node scripts/check-project.js",
     "verify": "npm run check && npm test"
   },
@@ -23,6 +24,7 @@
   "license": "MIT",
   "devDependencies": {
     "@playwright/test": "1.61.1",
+    "selenium-webdriver": "4.46.0",
     "web-ext": "9.4.0"
   }
 }

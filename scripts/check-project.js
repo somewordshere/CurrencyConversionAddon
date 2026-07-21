@@ -37,6 +37,7 @@ const runtimeFiles = [
   "src/shared/browser-api.js",
   "src/shared/currencies.js",
   "src/shared/messages.js",
+  "src/shared/page-access.js",
   "src/icons/icon16.png",
   "src/icons/icon32.png",
   "src/icons/icon48.png",

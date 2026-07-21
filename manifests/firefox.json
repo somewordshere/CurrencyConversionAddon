@@ -4,6 +4,7 @@
       "shared/browser-api.js",
       "shared/currencies.js",
       "shared/messages.js",
+      "shared/page-access.js",
       "background/catalog.js",
       "background/rates.js",
       "background/main.js"

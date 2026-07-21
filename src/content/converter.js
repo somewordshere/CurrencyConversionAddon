@@ -86,7 +86,7 @@
         )
       }))
       .filter((plan) => plan.matches.length);
-    const splitPlans = collectSplitPricePlans(scanRoots);
+    const splitPlans = collectSplitPricePlans(scanRoots, textScan.splitCandidates);
     const bases = collectSourceCurrencies(textPlans, splitPlans);
 
     if (bases.size === 0) {
@@ -204,6 +204,7 @@
 
   function collectTextNodes(roots) {
     const nodes = new Set();
+    const splitCandidates = new Set();
     const scanState = { inspected: 0 };
     let limited = false;
 
@@ -221,7 +222,7 @@
       }
       prioritizeViewportElements(priceRoots);
       for (const priceRoot of priceRoots) {
-        limited = collectTextNodesFromRoot(priceRoot, nodes, scanState) || limited;
+        limited = collectTextNodesFromRoot(priceRoot, nodes, splitCandidates, scanState) || limited;
         if (nodes.size >= MAX_TEXT_NODES_PER_SCAN) break;
       }
     }
@@ -236,16 +237,22 @@
         continue;
       }
       if (![Node.ELEMENT_NODE, Node.DOCUMENT_FRAGMENT_NODE].includes(root.nodeType) || isOwnedElement(root)) continue;
-      limited = collectTextNodesFromRoot(root, nodes, scanState) || limited;
+      limited = collectTextNodesFromRoot(root, nodes, splitCandidates, scanState) || limited;
       if (scanState.inspected >= MAX_TEXT_NODES_INSPECTED_PER_SCAN) break;
     }
-    return { nodes: [...nodes], limited, inspected: scanState.inspected };
+    return {
+      nodes: [...nodes],
+      splitCandidates: [...splitCandidates],
+      limited,
+      inspected: scanState.inspected
+    };
   }
 
-  function collectTextNodesFromRoot(root, nodes, scanState) {
+  function collectTextNodesFromRoot(root, nodes, splitCandidates, scanState) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
       scanState.inspected += 1;
+      collectSplitCandidateForTextNode(walker.currentNode, splitCandidates);
       if (acceptTextNode(walker.currentNode) === NodeFilter.FILTER_ACCEPT) {
         nodes.add(walker.currentNode);
       }
@@ -253,6 +260,20 @@
       if (scanState.inspected >= MAX_TEXT_NODES_INSPECTED_PER_SCAN) return true;
     }
     return false;
+  }
+
+  function collectSplitCandidateForTextNode(node, splitCandidates) {
+    if (!QUICK_CURRENCY_MARKER_PATTERN.test(node.nodeValue || "")) return;
+
+    let element = node.parentElement;
+    for (let level = 0; element && level < 3; level += 1, element = element.parentElement) {
+      const text = element.textContent?.trim();
+      if (!text || text.length > 100) continue;
+      if (!POSSIBLE_PRICE_TEXT_PATTERN.test(text) || element.childElementCount === 0) continue;
+      if (!CurrencyDetector.findMatchesForContext(text, element, settings).length) continue;
+      splitCandidates.add(element);
+      return;
+    }
   }
 
   function acceptTextNode(node) {
@@ -275,8 +296,8 @@
     return NodeFilter.FILTER_ACCEPT;
   }
 
-  function collectSplitPricePlans(roots) {
-    const elements = new Set();
+  function collectSplitPricePlans(roots, discoveredElements = []) {
+    const elements = new Set(discoveredElements);
     for (const root of roots) {
       if (![Node.ELEMENT_NODE, Node.DOCUMENT_FRAGMENT_NODE].includes(root.nodeType) || isOwnedElement(root)) continue;
       if (root.matches?.(SPLIT_CANDIDATE_SELECTOR)) elements.add(root);

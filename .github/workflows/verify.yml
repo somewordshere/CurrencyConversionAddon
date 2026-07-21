@@ -16,6 +16,13 @@ jobs:
       - run: npm ci
       - run: npm run verify
       - run: npm run lint:firefox
+      - uses: browser-actions/setup-firefox@v1
+        with:
+          firefox-version: latest
+      - uses: browser-actions/setup-geckodriver@latest
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm run test:browser:firefox
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
       - run: npm run build
