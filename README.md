@@ -2,9 +2,9 @@
 
 Currency Converter Pro is a privacy-focused Chrome and Firefox extension that converts prices on shopping pages into a currency you understand.
 
-**Current version:** 1.6.2 · **Platforms:** Chrome and Firefox Manifest V3 · **License:** MIT
+**Current version:** 1.7.2 · **Platforms:** Chrome and Firefox Manifest V3 · **License:** MIT
 
-[![Chrome Web Store](https://img.shields.io/badge/Chrome-Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/) [![Chrome build](https://img.shields.io/badge/Chrome-Build-4285F4?logo=googlechrome&logoColor=white)](release/1.6.2/currency-converter-pro-1.6.2-chrome.zip) [![Firefox build](https://img.shields.io/badge/Firefox-Build-FF7139?logo=firefoxbrowser&logoColor=white)](release/1.6.2/currency-converter-pro-1.6.2-firefox.zip)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome-Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/) [![Chrome build](https://img.shields.io/badge/Chrome-Build-4285F4?logo=googlechrome&logoColor=white)](release/1.7.2/currency-converter-pro-1.7.2-chrome.zip) [![Firefox build](https://img.shields.io/badge/Firefox-Build-FF7139?logo=firefoxbrowser&logoColor=white)](release/1.7.2/currency-converter-pro-1.7.2-firefox.zip)
 
 **[View the complete changelog →](CHANGELOG.md)**
 
@@ -17,27 +17,27 @@ Currency Converter Pro is a privacy-focused Chrome and Firefox extension that co
 ## Features
 
 - Search currencies by name or ISO code, with conservative **AUTO** detection when the source currency is unknown.
-- Convert a complete shopping page, one highlighted price, or an amount typed into the popup.
+- Remember an explicit source currency separately for each website while every new website starts in **AUTO**.
+- Convert a complete shopping page from its one-click page control, one highlighted price, or an amount typed into the toolbar popup.
+- Show the one-click conversion suggestion automatically in the top-right corner, with restrained entrance and success motion.
 - Handle prices added later by dynamic and single-page websites.
 - Show converted prices beside the originals or replace them, with exact undo support.
-- Remember only websites you explicitly approve and support a keyboard conversion shortcut.
+- Automatically convert only the websites you explicitly remember, or use the keyboard conversion shortcut.
 - Continue temporarily with clearly labeled cached rates when the provider is unavailable.
 
 ## Installation
 
 - **Store installation:** Install Currency Converter Pro from the [Chrome Web Store](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) or [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/).
-- **Manual installation:** Download the latest [Chrome build](release/1.6.2/currency-converter-pro-1.6.2-chrome.zip) or [Firefox build](release/1.6.2/currency-converter-pro-1.6.2-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
+- **Manual installation:** Download the latest [Chrome build](release/1.7.2/currency-converter-pro-1.7.2-chrome.zip) or [Firefox build](release/1.7.2/currency-converter-pro-1.7.2-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
 
 ## 🧭 How to use it
 
 ### Convert an entire page
 
-1. Open the extension from the browser toolbar.
-2. Turn on **Page conversion**.
-3. Keep **AUTO** selected, or search for a source currency manually.
-4. Search for and select the currency you want to see.
-5. Select **Convert page prices**.
-6. Use **Undo conversion** to restore the original page.
+1. Choose your target currency in the toolbar popup once.
+2. On any ordinary webpage, select **Convert page** in the top-right page control.
+3. Keep **AUTO** selected for source detection, or choose the source currency manually. The extension remembers that source only for the current website; unseen websites begin in **AUTO**.
+4. Use **Undo conversion** in the toolbar popup to restore the original page.
 
 ### Convert a custom amount
 
@@ -49,7 +49,7 @@ Highlight a supported price on the page and use the small conversion prompt or t
 
 ### Remember a website
 
-Open **Page options** and enable **Always convert this website**. The browser grants access only to that website. Use **Forget site** to revoke the permission later.
+Open **Page options** and enable **Always convert this website**. The extension then converts that website automatically when you revisit it. Use **Forget site** to disable automatic conversion for it.
 
 ## ⚙️ How it works
 
@@ -97,14 +97,14 @@ For example, if JSON-LD identifies EUR, the page uses a `.de` domain, and its la
 
 All webpage scanning, price detection, conversion, and rendering happen locally inside the browser. The extension never transmits page contents, highlighted text, price values, visited URLs, or browsing history.
 
-The only external requests retrieve the currency catalog and reference rates from Frankfurter using ISO currency codes. No webpage text, prices, URLs, analytics, tracking identifiers, or advertising data is included. As with any HTTPS request, the service may receive ordinary network metadata such as an IP address. Preferences, recent currency choices, cached rates, and deliberately approved website origins remain in browser storage.
+The only external requests retrieve the currency catalog and reference rates from Frankfurter using ISO currency codes. No webpage text, prices, URLs, analytics, tracking identifiers, or advertising data is included. As with any HTTPS request, the service may receive ordinary network metadata such as an IP address. Preferences, recent currency choices, cached rates, and deliberately remembered website origins remain in browser storage.
 
 | Permission | Why it is needed |
 | --- | --- |
 | `storage` | Saves settings, recent currencies, approved website origins, and cached rates. |
 | `contextMenus` | Adds the right-click command for a highlighted price. |
-| `activeTab` and `scripting` | Temporarily reads and updates the current page after a user action. |
-| Optional website access | Enables automatic conversion only on websites the user explicitly remembers. |
+| Website access | Displays the one-click page control and processes visible prices locally on ordinary HTTP and HTTPS webpages. |
+| `activeTab` and `scripting` | Provides user-triggered fallback injection on supported pages where declarative injection is unavailable. |
 | `api.frankfurter.dev` | Retrieves reference exchange rates using ISO currency codes. |
 | Firefox `websiteContent` data declaration | Discloses that a source ISO currency code detected from the page can be transmitted to the rate provider; raw page text, prices, and URLs are not transmitted. |
 
@@ -153,6 +153,9 @@ The build composes `manifests/base.json` with the selected browser override, cop
 
 | Version | Highlights | Download |
 | --- | --- | --- |
+| 1.7.2 | Top-right webpage suggestion, fade-in entrance, conversion-success feedback, and reduced-motion support | [Chrome](release/1.7.2/currency-converter-pro-1.7.2-chrome.zip) · [Firefox](release/1.7.2/currency-converter-pro-1.7.2-firefox.zip) |
+| 1.7.1 | Per-website source currencies, AUTO defaults for new websites, and an always-available webpage suggestion | [Chrome](release/1.7.1/currency-converter-pro-1.7.1-chrome.zip) · [Firefox](release/1.7.1/currency-converter-pro-1.7.1-firefox.zip) |
+| 1.7.0 | One-click control on webpages, local website-wide processing, and simpler automatic-site preferences | [Chrome](release/1.7.0/currency-converter-pro-1.7.0-chrome.zip) · [Firefox](release/1.7.0/currency-converter-pro-1.7.0-firefox.zip) |
 | 1.6.2 | Complete Allegro split-decimal prices, duplicate prevention, and stricter product-title filtering | [Chrome](release/1.6.2/currency-converter-pro-1.6.2-chrome.zip) · [Firefox](release/1.6.2/currency-converter-pro-1.6.2-firefox.zip) |
 | 1.6.1 | Digitec-style split prices, reliable Firefox page injection, clearer protected-page errors, and real Firefox browser coverage | [Chrome](release/1.6.1/currency-converter-pro-1.6.1-chrome.zip) · [Firefox](release/1.6.1/currency-converter-pro-1.6.1-firefox.zip) |
 | 1.6.0 | Shared Chrome/Firefox source, browser-specific manifests, dual builds, and Firefox validation | [Chrome](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip) · [Firefox](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip) |

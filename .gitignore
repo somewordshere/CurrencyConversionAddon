@@ -2,6 +2,7 @@
 Thumbs.db
 node_modules/
 coverage/
+artifacts/
 playwright-report/
 test-results/
 dist/
@@ -18,6 +19,7 @@ store/
 # Keep generated unpacked builds out of the repository
 release/unpacked/
 release/*.zip
+release/*/*/
 !release/*-chrome-store.zip
 
 # Publish only the screenshots used by the README

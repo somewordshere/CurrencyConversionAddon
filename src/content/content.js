@@ -29,7 +29,10 @@
       settingsLoadPromise = loadSettings();
       await settingsLoadPromise;
     }
-    if (areaName === "local" && changes.autoConvertSites && settings?.enabled) {
+    if (areaName === "local" && changes.siteSourceCurrencies) {
+      settingsLoadPromise = loadSettings();
+      await settingsLoadPromise;
+    } else if (areaName === "local" && changes.autoConvertSites && settings?.enabled) {
       await applySitePreference();
     }
   });
@@ -77,6 +80,7 @@
       convertSelection: CurrencyPageConverter.convertSelectionText
     });
     CurrencyPageUi.clearTransientUi();
+    CurrencyPageUi.removePageConvertPrompt();
 
     if (settings.enabled) await applySitePreference();
     else {
@@ -96,11 +100,12 @@
     if (status?.remembered) {
       CurrencyPageUi.removePageConvertPrompt();
       const result = await runSiteConversion();
-      if (!result?.ok && result?.detectionConfidence !== "low") showConversionResult(result);
-    } else if (settings.showPagePrompt) {
-      CurrencyPageUi.showPageConvertPrompt();
+      if (!result?.ok) {
+        CurrencyPageUi.showPageConvertPrompt();
+        if (result?.detectionConfidence !== "low") showConversionResult(result);
+      }
     } else {
-      CurrencyPageUi.removePageConvertPrompt();
+      CurrencyPageUi.showPageConvertPrompt();
     }
   }
 
@@ -117,7 +122,7 @@
     if (forgetSite) {
       await ExtensionAPI.runtime.sendMessage({ type: M.FORGET_SITE, origin: getCurrentOrigin() });
     }
-    if (settings?.enabled && settings.showPagePrompt && !suppressPrompt) CurrencyPageUi.showPageConvertPrompt();
+    if (settings?.enabled && !suppressPrompt) CurrencyPageUi.showPageConvertPrompt();
     else CurrencyPageUi.removePageConvertPrompt();
     return { ok: true };
   }

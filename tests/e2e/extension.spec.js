@@ -15,8 +15,8 @@ const SPLIT_FRACTION_HTML = fs.readFileSync(
   "utf8"
 );
 
-async function seedExtension(extensionWorker) {
-  await extensionWorker.evaluate(async () => {
+async function seedExtension(extensionWorker, { showPagePrompt = false } = {}) {
+  await extensionWorker.evaluate(async ({ showPagePrompt }) => {
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const stored = await chrome.storage.sync.get("enabled");
       if (typeof stored.enabled === "boolean") break;
@@ -27,9 +27,10 @@ async function seedExtension(extensionWorker) {
       fromCurrency: "AUTO",
       toCurrency: "EUR",
       displayMode: "beside",
-      showPagePrompt: false
+      showPagePrompt
     });
     await chrome.storage.local.set({
+      siteSourceCurrencies: {},
       providerCurrencyCatalog: {
         version: 1,
         fetchedAt: new Date().toISOString(),
@@ -65,7 +66,7 @@ async function seedExtension(extensionWorker) {
         }
       }
     });
-  });
+  }, { showPagePrompt });
 }
 
 async function runPageCommand(extensionWorker, type, url = SHOP_URL) {
@@ -77,6 +78,88 @@ async function runPageCommand(extensionWorker, type, url = SHOP_URL) {
     return chrome.tabs.sendMessage(tab.id, { type });
   }, { url, type });
 }
+
+test("shows a one-click conversion control without opening the toolbar popup", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker);
+
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+
+  const control = shop.locator(".ccp-page-prompt");
+  await expect(control.getByText("Currency Converter Pro", { exact: true })).toBeVisible();
+  await expect(control).toContainText("Convert prices on this page to EUR.");
+  await expect(control).toHaveCSS("top", "16px");
+  await expect(control).toHaveCSS("right", "16px");
+  await expect(control).toHaveCSS("animation-name", "ccp-page-prompt-enter");
+  await control.getByRole("button", { name: "Convert page", exact: true }).click();
+
+  await expect(shop.locator("#initial ccp-conversion[data-ccp-owned='true']")).toHaveCount(1);
+  await expect(shop.locator("#initial")).toContainText("90,00");
+  await expect(control).toContainText("Converted 1 price");
+  await expect(control).toHaveAttribute("data-state", "success");
+  await expect(control).toHaveCSS("animation-name", "ccp-page-prompt-success");
+  await expect(shop.locator("#initial .ccp-badge")).toHaveCSS(
+    "animation-name",
+    "ccp-converted-value-enter"
+  );
+});
+
+test("disables prompt and converted-value animations when reduced motion is requested", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker);
+
+  const shop = await context.newPage();
+  await shop.emulateMedia({ reducedMotion: "reduce" });
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+
+  const control = shop.locator(".ccp-page-prompt");
+  await expect(control).toBeVisible();
+  await expect(control).toHaveCSS("animation-name", "none");
+  await control.getByRole("button", { name: "Convert page", exact: true }).click();
+  await expect(shop.locator("#initial .ccp-badge")).toHaveCSS("animation-name", "none");
+  await expect(control).toHaveCSS("animation-name", "none");
+});
+
+test("restores the one-click control when a storefront replaces the page body", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker);
+
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+
+  const control = shop.locator(".ccp-page-prompt");
+  await expect(control).toBeVisible();
+  await shop.evaluate(() => {
+    const replacement = document.createElement("body");
+    replacement.innerHTML = "<main><p>$25.00</p></main>";
+    document.documentElement.replaceChild(replacement, document.body);
+  });
+
+  await expect(control).toBeVisible();
+  await expect(control).toContainText("Convert prices on this page to EUR.");
+});
 
 test("converts marked prices split across neutral, obfuscated elements", async ({
   context,
@@ -144,6 +227,7 @@ test("real extension popup, injection, dynamic conversion, and undo work togethe
 
   const popup = await context.newPage();
   await popup.setViewportSize({ width: 440, height: 600 });
+  await shop.bringToFront();
   await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
   await expect(popup.getByRole("heading", { name: "Currency Converter Pro" })).toBeVisible();
   await expect(popup.getByText("Page conversion", { exact: true })).toBeVisible();
@@ -161,7 +245,16 @@ test("real extension popup, injection, dynamic conversion, and undo work togethe
   await popup.getByRole("option", { name: /^USD/ }).click();
   await expect.poll(() => extensionWorker.evaluate(async () =>
     (await chrome.storage.sync.get("fromCurrency")).fromCurrency
-  )).toBe("USD");
+  )).toBe("AUTO");
+  await expect.poll(() => extensionWorker.evaluate(async (origin) =>
+    (await chrome.storage.local.get("siteSourceCurrencies")).siteSourceCurrencies?.[origin],
+  new URL(SHOP_URL).origin)).toBe("USD");
+  expect(await extensionWorker.evaluate(async () =>
+    (await getSettings("https://another-shop.example/product")).settings.fromCurrency
+  )).toBe("AUTO");
+  expect(await extensionWorker.evaluate(async (origin) =>
+    (await getSettings(origin)).settings.fromCurrency,
+  SHOP_URL)).toBe("USD");
   await expect(sourceCurrency).toHaveValue(/^USD/);
   await expect(popup.locator("#quickResult")).toContainText("0,90");
   await popup.getByRole("textbox", { name: "Amount", exact: true }).fill("25");

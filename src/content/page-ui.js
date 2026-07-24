@@ -1,11 +1,14 @@
 (function initializePageUi(global) {
   let settings = null;
   let pageConvertPrompt = null;
+  let pageConvertButton = null;
+  let pageConvertMessage = null;
   let selectionPopup = null;
   let pendingSelectionText = "";
   let runConversion = null;
   let convertSelection = null;
   let listenersInstalled = false;
+  let promptPresenceObserver = null;
   let toastTimer = null;
 
   function configure(options) {
@@ -21,42 +24,84 @@
     document.addEventListener("keyup", handleKeyboardSelection);
     document.addEventListener("mousedown", handleOutsideSelectionPopup);
     window.addEventListener("scroll", removeSelectionPopup, true);
+    promptPresenceObserver = new MutationObserver(restoreRemovedPagePrompt);
+    promptPresenceObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  function restoreRemovedPagePrompt() {
+    if (!pageConvertPrompt || pageConvertPrompt.isConnected) return;
+    pageConvertPrompt = null;
+    pageConvertButton = null;
+    pageConvertMessage = null;
+    if (settings?.enabled) showPageConvertPrompt();
   }
 
   function showPageConvertPrompt() {
+    if (pageConvertPrompt && !pageConvertPrompt.isConnected) {
+      pageConvertPrompt = null;
+      pageConvertButton = null;
+      pageConvertMessage = null;
+    }
     if (pageConvertPrompt || !settings?.enabled || !document.body || window.top !== window) return;
-    pageConvertPrompt = document.createElement("button");
-    pageConvertPrompt.type = "button";
+    pageConvertPrompt = document.createElement("aside");
     pageConvertPrompt.className = "ccp-page-prompt";
-    pageConvertPrompt.textContent = "CCP · Convert prices";
-    pageConvertPrompt.setAttribute("aria-label", "Convert prices on this page");
-    pageConvertPrompt.addEventListener("click", handleConvertAllClick);
+    pageConvertPrompt.setAttribute("aria-label", "Currency Converter Pro page control");
+
+    const header = document.createElement("div");
+    header.className = "ccp-page-prompt-header";
+    const title = document.createElement("strong");
+    title.className = "ccp-page-prompt-title";
+    title.textContent = "Currency Converter Pro";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "ccp-page-prompt-close";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "Dismiss currency conversion control");
+    close.addEventListener("click", removePageConvertPrompt);
+    header.append(title, close);
+
+    pageConvertMessage = document.createElement("span");
+    pageConvertMessage.className = "ccp-page-prompt-message";
+    pageConvertMessage.textContent = `Convert prices on this page to ${settings.toCurrency}.`;
+
+    pageConvertButton = document.createElement("button");
+    pageConvertButton.type = "button";
+    pageConvertButton.className = "ccp-page-prompt-action";
+    pageConvertButton.textContent = "Convert page";
+    pageConvertButton.addEventListener("click", handleConvertAllClick);
+
+    pageConvertPrompt.append(header, pageConvertMessage, pageConvertButton);
     document.body.appendChild(pageConvertPrompt);
   }
 
   async function handleConvertAllClick() {
-    pageConvertPrompt.disabled = true;
-    pageConvertPrompt.textContent = "CCP · Converting…";
+    if (!pageConvertPrompt || !pageConvertButton) return;
+    pageConvertButton.disabled = true;
+    pageConvertButton.textContent = "Converting…";
+    pageConvertMessage.textContent = "Scanning visible prices on this page.";
     delete pageConvertPrompt.dataset.state;
     const result = await runConversion();
     if (!pageConvertPrompt) return;
 
     if (result?.ok) {
-      const detected = result.detectedCurrency ? ` · ${result.detectedCurrency}` : "";
-      pageConvertPrompt.textContent = `CCP · Converted ${result.count}${detected}`;
+      const detected = result.detectedCurrency ? ` from ${result.detectedCurrency}` : "";
+      pageConvertButton.textContent = `Converted ${result.count} price${result.count === 1 ? "" : "s"}`;
+      pageConvertMessage.textContent = `Prices${detected} are now shown in ${settings.toCurrency}.`;
       pageConvertPrompt.dataset.state = "success";
       window.setTimeout(removePageConvertPrompt, 4000);
     } else {
-      pageConvertPrompt.disabled = false;
-      pageConvertPrompt.textContent = "CCP · Try again";
+      pageConvertButton.disabled = false;
+      pageConvertButton.textContent = "Try again";
+      pageConvertMessage.textContent = result?.error || "Currency could not be detected confidently.";
       pageConvertPrompt.dataset.state = "error";
-      showToast(result?.error || "Currency could not be detected confidently.");
     }
   }
 
   function removePageConvertPrompt() {
     pageConvertPrompt?.remove();
     pageConvertPrompt = null;
+    pageConvertButton = null;
+    pageConvertMessage = null;
   }
 
   function handleTextSelection(event) {

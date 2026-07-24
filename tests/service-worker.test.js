@@ -20,7 +20,6 @@ const context = vm.createContext({
       onMessage: event,
       getManifest: () => ({ browser_specific_settings: { gecko: { id: "test@example" } } })
     },
-    permissions: { onRemoved: event },
     contextMenus: { onClicked: event },
     commands: { onCommand: event },
     storage: { onChanged: event },
@@ -54,7 +53,7 @@ test("settings are restricted to supported values", () => {
     showPagePrompt: "yes"
   });
   assert.deepEqual(JSON.parse(JSON.stringify(invalid)), {
-    enabled: false,
+    enabled: true,
     fromCurrency: "AUTO",
     toCurrency: "EUR",
     displayMode: "beside",
@@ -70,7 +69,7 @@ test("settings are restricted to supported values", () => {
   });
   assert.equal(valid.enabled, true);
   assert.equal(valid.displayMode, "replace");
-  assert.equal(valid.showPagePrompt, false);
+  assert.equal(valid.showPagePrompt, true);
 
   const providerExpanded = context.sanitizeSettings({
     enabled: true,
@@ -92,24 +91,59 @@ test("remembered-site access is normalized to one web origin", () => {
   });
   assert.equal(context.normalizeSite("chrome://extensions"), null);
   assert.equal(context.normalizeSite("file:///tmp/shop.html"), null);
-  assert.equal(context.siteScriptId(site.origin), context.siteScriptId(site.origin));
-  assert.notEqual(context.siteScriptId(site.origin), context.siteScriptId("https://other.example"));
 });
 
-test("content script paths suit registration and one-off injection", async () => {
+test("source currencies are resolved per website and new websites start in AUTO", () => {
+  const preferences = {
+    "https://shop.example": "USD",
+    "https://another.example": "CHF"
+  };
+
+  assert.equal(
+    context.resolveSiteSourceCurrency("https://shop.example/product", preferences, ["CHF", "USD"]),
+    "USD"
+  );
+  assert.equal(
+    context.resolveSiteSourceCurrency("https://new.example/product", preferences, ["CHF", "USD"]),
+    "AUTO"
+  );
+  assert.equal(
+    context.resolveSiteSourceCurrency("https://shop.example/product", preferences, ["EUR"]),
+    "AUTO"
+  );
+  assert.equal(context.resolveSiteSourceCurrency("chrome://extensions", preferences, ["USD"]), "AUTO");
+});
+
+test("selecting AUTO removes a website's saved source currency", async () => {
+  const originalLocalStorage = context.ExtensionAPI.storage.local;
+  let state = {};
+  context.ExtensionAPI.storage.local = {
+    async get(key) {
+      return { [key]: state[key] };
+    },
+    async set(values) {
+      state = { ...state, ...values };
+    }
+  };
+
+  try {
+    await context.saveSiteSourceCurrency("https://shop.example/product", "USD", ["EUR", "USD"]);
+    assert.equal(state.siteSourceCurrencies["https://shop.example"], "USD");
+
+    await context.saveSiteSourceCurrency("https://shop.example/other", "AUTO", ["EUR", "USD"]);
+    assert.equal(state.siteSourceCurrencies["https://shop.example"], undefined);
+  } finally {
+    context.ExtensionAPI.storage.local = originalLocalStorage;
+  }
+});
+
+test("content script paths suit one-off fallback injection", async () => {
   const originalTabsSendMessage = context.ExtensionAPI.tabs.sendMessage;
-  const originalGetRegistered = context.ExtensionAPI.scripting.getRegisteredContentScripts;
-  const originalRegister = context.ExtensionAPI.scripting.registerContentScripts;
   const originalInsertCss = context.ExtensionAPI.scripting.insertCSS;
   const originalExecuteScript = context.ExtensionAPI.scripting.executeScript;
-  let registration;
   let cssInjection;
   let scriptInjection;
 
-  context.ExtensionAPI.scripting.getRegisteredContentScripts = async () => [];
-  context.ExtensionAPI.scripting.registerContentScripts = async ([value]) => {
-    registration = value;
-  };
   context.ExtensionAPI.tabs.sendMessage = async () => {
     throw new Error("Content script is not loaded yet.");
   };
@@ -121,48 +155,23 @@ test("content script paths suit registration and one-off injection", async () =>
   };
 
   try {
-    await context.registerSiteContentScript({
-      origin: "https://shop.example",
-      pattern: "https://shop.example/*"
-    });
     await context.ensureContentScripts(42);
 
-    assert.ok(registration.js.every((file) => !file.startsWith("/")));
-    assert.ok(registration.css.every((file) => !file.startsWith("/")));
     assert.ok(scriptInjection.files.every((file) => file.startsWith("/")));
     assert.ok(cssInjection.files.every((file) => file.startsWith("/")));
     assert.equal(scriptInjection.target.tabId, 42);
   } finally {
     context.ExtensionAPI.tabs.sendMessage = originalTabsSendMessage;
-    context.ExtensionAPI.scripting.getRegisteredContentScripts = originalGetRegistered;
-    context.ExtensionAPI.scripting.registerContentScripts = originalRegister;
     context.ExtensionAPI.scripting.insertCSS = originalInsertCss;
     context.ExtensionAPI.scripting.executeScript = originalExecuteScript;
   }
 });
 
-test("Firefox rejects remembered-site patterns with non-default ports", () => {
-  assert.equal(context.normalizeSite("https://shop.example:8443/product"), null);
-  assert.equal(context.normalizeSite("http://localhost:3000/"), null);
-  assert.match(context.siteMemoryError("https://shop.example:8443/product"), /non-default port/);
-
+test("remembered-site preferences preserve non-default ports", () => {
+  assert.equal(context.normalizeSite("https://shop.example:8443/product").pattern, "https://shop.example:8443/*");
+  assert.equal(context.normalizeSite("http://localhost:3000/").pattern, "http://localhost:3000/*");
   assert.equal(context.normalizeSite("https://shop.example:443/product").pattern, "https://shop.example/*");
   assert.equal(context.normalizeSite("http://shop.example:80/product").pattern, "http://shop.example/*");
-});
-
-test("Chrome keeps exact remembered-site patterns with non-default ports", () => {
-  const getManifest = context.ExtensionAPI.runtime.getManifest;
-  context.ExtensionAPI.runtime.getManifest = () => ({});
-  try {
-    const site = context.normalizeSite("https://shop.example:8443/product");
-    assert.deepEqual(JSON.parse(JSON.stringify(site)), {
-      origin: "https://shop.example:8443",
-      hostname: "shop.example",
-      pattern: "https://shop.example:8443/*"
-    });
-  } finally {
-    context.ExtensionAPI.runtime.getManifest = getManifest;
-  }
 });
 
 test("Firefox site status rejects protected pages and PDF viewers", async () => {

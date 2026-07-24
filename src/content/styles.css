@@ -11,9 +11,12 @@ ccp-conversion[data-display-mode="replace"] .ccp-original {
 }
 
 ccp-conversion .ccp-badge {
+  display: inline-block;
   color: #15803d !important;
   font-weight: 700 !important;
   white-space: nowrap;
+  transform-origin: left center;
+  animation: ccp-converted-value-enter 360ms cubic-bezier(.2, .8, .2, 1) both;
 }
 
 .ccp-page-prompt,
@@ -27,18 +30,92 @@ ccp-conversion .ccp-badge {
   border-radius: 8px;
   color: #fff;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  cursor: pointer;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
 }
 
 .ccp-page-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   top: 16px;
   right: 16px;
-  padding: 10px 15px;
+  width: min(300px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: #111827;
+  font-size: 13px;
+  line-height: 1.35;
+  cursor: default;
+  animation: ccp-page-prompt-enter 240ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.ccp-page-prompt-header {
+  all: initial;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ccp-page-prompt-title,
+.ccp-page-prompt-message {
+  all: initial;
+  color: #fff;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.ccp-page-prompt-title {
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.ccp-page-prompt-message {
+  display: block;
+  color: #d1d5db;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ccp-page-prompt-close,
+.ccp-page-prompt-action {
+  all: unset;
+  box-sizing: border-box;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.ccp-page-prompt-close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  color: #9ca3af;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.ccp-page-prompt-close:hover {
+  background: #1f2937;
+  color: #fff;
+}
+
+.ccp-page-prompt-action {
+  display: block;
+  padding: 9px 12px;
+  border-radius: 9px;
   background: #2563eb;
+  color: #fff;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.2;
+  text-align: center;
+}
+
+.ccp-page-prompt-action:hover {
+  background: #1d4ed8;
 }
 
 .ccp-selection-popup {
@@ -49,10 +126,11 @@ ccp-conversion .ccp-badge {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
+  cursor: pointer;
 }
 
 .ccp-toast {
-  top: 16px;
+  bottom: 16px;
   right: 16px;
   max-width: min(360px, calc(100vw - 32px));
   padding: 10px 14px;
@@ -77,24 +155,65 @@ ccp-conversion .ccp-badge {
   outline-offset: 2px;
 }
 
-.ccp-page-prompt[data-state="success"],
+.ccp-page-prompt[data-state="success"] {
+  border-color: #0f766e;
+  animation: ccp-page-prompt-success 520ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.ccp-page-prompt[data-state="error"] {
+  border-color: #dc2626;
+}
+
 .ccp-selection-popup[data-state="success"] {
   background: #0f766e;
 }
 
-.ccp-page-prompt[data-state="error"],
 .ccp-selection-popup[data-state="error"] {
   background: #b91c1c;
 }
 
-.ccp-page-prompt:focus-visible,
+.ccp-page-prompt-close:focus-visible,
+.ccp-page-prompt-action:focus-visible,
 .ccp-selection-popup:focus-visible {
   outline: 3px solid #fbbf24;
   outline-offset: 2px;
 }
 
-.ccp-page-prompt:disabled,
+.ccp-page-prompt-action:disabled,
 .ccp-selection-popup:disabled {
   cursor: wait;
   opacity: 0.9;
+}
+
+@keyframes ccp-page-prompt-enter {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ccp-page-prompt-success {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  }
+  45% {
+    transform: scale(1.015);
+    box-shadow: 0 10px 28px rgba(15, 118, 110, 0.34);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  }
+}
+
+@keyframes ccp-converted-value-enter {
+  from { opacity: 0; transform: translateY(3px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ccp-page-prompt,
+  .ccp-page-prompt[data-state="success"],
+  ccp-conversion .ccp-badge {
+    animation: none;
+  }
 }
