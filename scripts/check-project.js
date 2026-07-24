@@ -11,6 +11,11 @@ const firefoxManifest = readJson("manifests/firefox.json");
 
 assert.equal(baseManifest.manifest_version, 3);
 assert.equal(baseManifest.version, packageJson.version, "manifest and package versions must match");
+assert.ok(baseManifest.description.length <= 132, "manifest description must not exceed 132 characters");
+assert.ok(baseManifest.host_permissions.includes("http://*/*"));
+assert.ok(baseManifest.host_permissions.includes("https://*/*"));
+assert.equal(baseManifest.optional_host_permissions, undefined);
+assert.deepEqual(baseManifest.content_scripts[0].matches, ["http://*/*", "https://*/*"]);
 assert.equal(chromeManifest.background.service_worker, "background/chrome-worker.js");
 assert.ok(Array.isArray(firefoxManifest.background.scripts));
 assert.equal(firefoxManifest.browser_specific_settings.gecko.strict_min_version, "140.0");

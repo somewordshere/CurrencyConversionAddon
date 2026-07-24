@@ -2,6 +2,66 @@
 
 All notable changes to Currency Converter Pro are documented here. Dates reflect the release preparation date for each version.
 
+## 1.7.2 - 2026-07-24
+
+### Added
+
+- Added a fade-and-settle entrance for the webpage conversion suggestion.
+- Added a brief success pulse to the webpage control and a fade-in animation for newly converted values.
+- Added Chromium coverage for the top-right position, entrance animation, success animation, and reduced-motion behavior.
+
+### Changed
+
+- Moved the webpage conversion suggestion from the bottom-right to the top-right corner.
+- Moved transient conversion toasts to the bottom-right so they do not overlap the webpage suggestion.
+- Kept all new motion disabled when the operating system requests reduced motion.
+
+### Packaging
+
+- Prepared separate 1.7.2 Chrome and Firefox builds containing runtime files only.
+
+## 1.7.1 - 2026-07-24
+
+### Added
+
+- Added per-website source-currency preferences for ordinary HTTP and HTTPS websites.
+- Added regression coverage proving that a saved source is restored on the same website while a new website starts in `AUTO`.
+
+### Changed
+
+- Made the one-click conversion suggestion available on every ordinary website whenever page conversion is enabled.
+- Removed the prompt-disable option from Page options so an older saved preference cannot silently suppress the webpage suggestion.
+- Reset the legacy global source-currency value to `AUTO`; explicit source choices are now stored only for their website origin.
+
+### Packaging
+
+- Prepared separate 1.7.1 Chrome and Firefox builds containing runtime files only.
+
+## 1.7.0 - 2026-07-23
+
+### Added
+
+- Added a compact, dismissible one-click conversion control directly to ordinary HTTP and HTTPS webpages.
+- Added clear in-page progress, success, error, keyboard-focus, and reduced-motion states.
+- Added Chromium browser coverage proving that the page control appears and converts prices without opening the toolbar popup first.
+- Added an opt-in, resumable Chrome compatibility sweep for 100 shopping websites across 20 currencies.
+
+### Changed
+
+- Enabled page conversion by default for new installations while preserving the saved choice of existing users.
+- Changed remembered websites from permission grants into automatic-conversion preferences.
+- Declared website access at installation so the in-page control can be available before the toolbar popup is opened.
+- Updated privacy and permission documentation to explain the broader website access and local-only page processing.
+
+### Fixed
+
+- Restored the one-click page control automatically when a dynamic storefront replaces the document body after extension injection.
+- Shortened the manifest description to comply with the 132-character browser-store limit.
+
+### Packaging
+
+- Prepared separate 1.7.0 Chrome and Firefox builds containing runtime files only.
+
 ## 1.6.2 - 2026-07-21
 
 ### Added

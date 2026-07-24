@@ -1,13 +1,14 @@
 const DEFAULT_SETTINGS = Object.freeze({
-  enabled: false,
+  enabled: true,
   fromCurrency: "AUTO",
   toCurrency: "EUR",
   displayMode: "beside",
   showPagePrompt: true
 });
 const SITE_PREFERENCES_KEY = "autoConvertSites";
+const SITE_SOURCE_CURRENCIES_KEY = "siteSourceCurrencies";
 const M = CurrencyMessages;
-const REGISTERED_CONTENT_SCRIPT_FILES = [
+const CONTENT_SCRIPT_FILES = [
   "shared/browser-api.js",
   "shared/currencies.js",
   "shared/messages.js",
@@ -17,9 +18,9 @@ const REGISTERED_CONTENT_SCRIPT_FILES = [
   "content/page-ui.js",
   "content/content.js"
 ];
-const REGISTERED_CONTENT_STYLE_FILES = ["content/styles.css"];
-const INJECTED_CONTENT_SCRIPT_FILES = REGISTERED_CONTENT_SCRIPT_FILES.map((file) => `/${file}`);
-const INJECTED_CONTENT_STYLE_FILES = REGISTERED_CONTENT_STYLE_FILES.map((file) => `/${file}`);
+const CONTENT_STYLE_FILES = ["content/styles.css"];
+const INJECTED_CONTENT_SCRIPT_FILES = CONTENT_SCRIPT_FILES.map((file) => `/${file}`);
+const INJECTED_CONTENT_STYLE_FILES = CONTENT_STYLE_FILES.map((file) => `/${file}`);
 
 ExtensionAPI.runtime.onInstalled.addListener(async () => {
   try {
@@ -28,7 +29,9 @@ ExtensionAPI.runtime.onInstalled.addListener(async () => {
     const supportedCodes = catalog.currencies.map((currency) => currency.code);
     await ExtensionAPI.storage.sync.set({
       ...DEFAULT_SETTINGS,
-      ...sanitizeSettings(stored, supportedCodes)
+      ...sanitizeSettings(stored, supportedCodes),
+      fromCurrency: "AUTO",
+      showPagePrompt: true
     });
     await ExtensionAPI.storage.local.remove("favoriteCurrencies");
 
@@ -39,6 +42,7 @@ ExtensionAPI.runtime.onInstalled.addListener(async () => {
       contexts: ["selection"]
     });
     await reconcileRememberedSites();
+    await reconcileSiteSourceCurrencies(supportedCodes);
   } catch (error) {
     console.error("Currency Converter Pro initialization failed.", error);
   }
@@ -46,12 +50,8 @@ ExtensionAPI.runtime.onInstalled.addListener(async () => {
 
 ExtensionAPI.runtime.onStartup.addListener(() => {
   reconcileRememberedSites().catch((error) => {
-    console.error("Could not restore remembered-site registrations.", error);
+    console.error("Could not restore remembered-site preferences.", error);
   });
-});
-
-ExtensionAPI.permissions.onRemoved.addListener(() => {
-  reconcileRememberedSites().catch(() => {});
 });
 
 ExtensionAPI.contextMenus.onClicked.addListener(async function handleContextMenuClick(info, tab) {
@@ -93,9 +93,9 @@ ExtensionAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleMessage(message, sender) {
   switch (message?.type) {
     case M.GET_SETTINGS:
-      return getSettings();
+      return getSettings(message.origin || sender?.url);
     case M.UPDATE_SETTINGS:
-      return updateSettings(message.payload);
+      return updateSettings(message.payload, message.origin || sender?.url);
     case M.GET_RATES:
       return CurrencyRateService.getRates(message.baseCurrency);
     case M.GET_CURRENCIES:
@@ -113,11 +113,18 @@ async function handleMessage(message, sender) {
   }
 }
 
-async function getSettings() {
+async function getSettings(originValue) {
   const catalog = await CurrencyCatalogService.getCurrencies();
   const supportedCodes = catalog.currencies.map((currency) => currency.code);
   const stored = await ExtensionAPI.storage.sync.get(Object.keys(DEFAULT_SETTINGS));
-  return { ok: true, settings: { ...DEFAULT_SETTINGS, ...sanitizeSettings(stored, supportedCodes) } };
+  const siteSources = await getSiteSourceCurrencies();
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    ...sanitizeSettings(stored, supportedCodes),
+    fromCurrency: resolveSiteSourceCurrency(originValue, siteSources, supportedCodes),
+    showPagePrompt: true
+  };
+  return { ok: true, settings };
 }
 
 async function getAvailableCurrencies() {
@@ -132,12 +139,12 @@ async function getAvailableCurrencies() {
   };
 }
 
-async function updateSettings(payload) {
+async function updateSettings(payload, originValue) {
   if (!payload || typeof payload !== "object") {
     return { ok: false, error: "Invalid settings." };
   }
 
-  const currentResult = await getSettings();
+  const currentResult = await getSettings(originValue);
   const currentSettings = currentResult.settings;
   const catalog = await CurrencyCatalogService.getCurrencies();
   const supportedCodes = catalog.currencies.map((currency) => currency.code);
@@ -167,7 +174,12 @@ async function updateSettings(payload) {
     }
   }
 
-  await ExtensionAPI.storage.sync.set(settings);
+  await ExtensionAPI.storage.sync.set({
+    ...settings,
+    fromCurrency: "AUTO",
+    showPagePrompt: true
+  });
+  await saveSiteSourceCurrency(originValue, settings.fromCurrency, supportedCodes);
   return { ok: true, settings };
 }
 
@@ -186,9 +198,7 @@ function sanitizeSettings(value, supportedCodes = CurrencyCatalog.CURRENCY_CODES
     displayMode: ["beside", "replace"].includes(value?.displayMode)
       ? value.displayMode
       : DEFAULT_SETTINGS.displayMode,
-    showPagePrompt: typeof value?.showPagePrompt === "boolean"
-      ? value.showPagePrompt
-      : DEFAULT_SETTINGS.showPagePrompt
+    showPagePrompt: true
   };
 }
 
@@ -209,12 +219,10 @@ async function getSiteStatus(originValue) {
   if (!site) return { ok: false, remembered: false, error: siteMemoryError(originValue) };
 
   const preferences = await getSitePreferences();
-  const hasPermission = await ExtensionAPI.permissions.contains({ origins: [site.pattern] });
   return {
     ok: true,
     origin: site.origin,
-    pattern: site.pattern,
-    remembered: preferences[site.origin] === true && hasPermission
+    remembered: preferences[site.origin] === true
   };
 }
 
@@ -224,15 +232,9 @@ async function rememberSite(originValue) {
   const site = normalizeSite(originValue);
   if (!site) return { ok: false, error: siteMemoryError(originValue) };
 
-  const hasPermission = await ExtensionAPI.permissions.contains({ origins: [site.pattern] });
-  if (!hasPermission) {
-    return { ok: false, needsPermission: true, pattern: site.pattern, error: "Site access was not granted." };
-  }
-
   const preferences = await getSitePreferences();
   preferences[site.origin] = true;
   await ExtensionAPI.storage.local.set({ [SITE_PREFERENCES_KEY]: preferences });
-  await registerSiteContentScript(site);
   return { ok: true, remembered: true, origin: site.origin };
 }
 
@@ -244,62 +246,44 @@ async function forgetSite(originValue) {
   delete preferences[site.origin];
   delete preferences[site.hostname];
   await ExtensionAPI.storage.local.set({ [SITE_PREFERENCES_KEY]: preferences });
-  await unregisterSiteContentScript(site);
-
-  const hasPermission = await ExtensionAPI.permissions.contains({ origins: [site.pattern] });
-  if (hasPermission) await ExtensionAPI.permissions.remove({ origins: [site.pattern] });
   return { ok: true, remembered: false, origin: site.origin };
 }
 
 async function reconcileRememberedSites() {
   const preferences = await getSitePreferences();
   const normalizedPreferences = {};
-  const desiredIds = new Set();
 
   for (const [key, remembered] of Object.entries(preferences)) {
     if (!remembered) continue;
     if (CurrencyPageAccess.unsupportedPageMessage(key)) continue;
     const site = normalizeSite(key);
     if (!site) continue;
-    const hasPermission = await ExtensionAPI.permissions.contains({ origins: [site.pattern] });
-    if (!hasPermission) continue;
     normalizedPreferences[site.origin] = true;
-    desiredIds.add(siteScriptId(site.origin));
-    await registerSiteContentScript(site);
   }
 
+  // Version 1.7 uses one declarative content script on ordinary web pages. Remove
+  // dynamic per-site registrations left by older releases during migration.
   const registered = await ExtensionAPI.scripting.getRegisteredContentScripts();
   const obsoleteIds = registered
-    .filter((script) => script.id.startsWith("ccp_site_") && !desiredIds.has(script.id))
+    .filter((script) => script.id.startsWith("ccp_site_"))
     .map((script) => script.id);
   if (obsoleteIds.length) await ExtensionAPI.scripting.unregisterContentScripts({ ids: obsoleteIds });
   await ExtensionAPI.storage.local.set({ [SITE_PREFERENCES_KEY]: normalizedPreferences });
 }
 
-async function registerSiteContentScript(site) {
-  const id = siteScriptId(site.origin);
-  const existing = await ExtensionAPI.scripting.getRegisteredContentScripts({ ids: [id] });
-  const registration = {
-    id,
-    matches: [site.pattern],
-    js: REGISTERED_CONTENT_SCRIPT_FILES,
-    css: REGISTERED_CONTENT_STYLE_FILES,
-    runAt: "document_idle",
-    allFrames: false,
-    persistAcrossSessions: true
-  };
+async function reconcileSiteSourceCurrencies(supportedCodes) {
+  const preferences = await getSiteSourceCurrencies();
+  const normalizedPreferences = {};
 
-  if (existing.length) {
-    await ExtensionAPI.scripting.updateContentScripts([registration]);
-  } else {
-    await ExtensionAPI.scripting.registerContentScripts([registration]);
+  for (const [key, currency] of Object.entries(preferences)) {
+    const site = normalizeSite(key);
+    if (!site || !supportedCodes.includes(currency)) continue;
+    normalizedPreferences[site.origin] = currency;
   }
-}
 
-async function unregisterSiteContentScript(site) {
-  const id = siteScriptId(site.origin);
-  const existing = await ExtensionAPI.scripting.getRegisteredContentScripts({ ids: [id] });
-  if (existing.length) await ExtensionAPI.scripting.unregisterContentScripts({ ids: [id] });
+  await ExtensionAPI.storage.local.set({
+    [SITE_SOURCE_CURRENCIES_KEY]: normalizedPreferences
+  });
 }
 
 async function getSitePreferences() {
@@ -307,11 +291,40 @@ async function getSitePreferences() {
   return { ...(stored[SITE_PREFERENCES_KEY] || {}) };
 }
 
+async function getSiteSourceCurrencies() {
+  const stored = await ExtensionAPI.storage.local.get(SITE_SOURCE_CURRENCIES_KEY);
+  return { ...(stored[SITE_SOURCE_CURRENCIES_KEY] || {}) };
+}
+
+function resolveSiteSourceCurrency(
+  originValue,
+  preferences,
+  supportedCodes = CurrencyCatalog.CURRENCY_CODES
+) {
+  const site = normalizeSite(originValue);
+  if (!site) return "AUTO";
+  const currency = preferences?.[site.origin];
+  return supportedCodes.includes(currency) ? currency : "AUTO";
+}
+
+async function saveSiteSourceCurrency(originValue, currency, supportedCodes) {
+  const site = normalizeSite(originValue);
+  if (!site) return;
+
+  const preferences = await getSiteSourceCurrencies();
+  if (currency === "AUTO" || !supportedCodes.includes(currency)) {
+    delete preferences[site.origin];
+    delete preferences[site.hostname];
+  } else {
+    preferences[site.origin] = currency;
+  }
+  await ExtensionAPI.storage.local.set({ [SITE_SOURCE_CURRENCIES_KEY]: preferences });
+}
+
 function normalizeSite(value) {
   try {
     const url = new URL(value);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (isFirefoxBuild() && url.port) return null;
     return {
       origin: url.origin,
       hostname: url.hostname.toLowerCase().replace(/^www\./, ""),
@@ -328,26 +341,10 @@ function siteMemoryError(value) {
     if (url.protocol !== "http:" && url.protocol !== "https:") {
       return "Only normal HTTP and HTTPS websites can be remembered.";
     }
-    if (isFirefoxBuild() && url.port) {
-      return "Firefox cannot enable automatic access for websites that use a non-default port. You can still convert this page manually.";
-    }
   } catch (_error) {
     // Fall through to the generic invalid-page explanation.
   }
   return "This page cannot be remembered.";
-}
-
-function isFirefoxBuild() {
-  return Boolean(ExtensionAPI.runtime.getManifest()?.browser_specific_settings?.gecko);
-}
-
-function siteScriptId(origin) {
-  let hash = 2166136261;
-  for (const character of origin) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `ccp_site_${(hash >>> 0).toString(36)}`;
 }
 
 function isSupportedTab(tab) {

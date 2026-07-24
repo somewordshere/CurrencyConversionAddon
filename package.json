@@ -1,6 +1,6 @@
 {
   "name": "currency-converter-pro-extension",
-  "version": "1.6.2",
+  "version": "1.7.2",
   "private": true,
   "description": "Privacy-focused Manifest V3 currency conversion extension",
   "scripts": {
@@ -15,6 +15,7 @@
     "test:browser": "npm run prepare:chrome && playwright test",
     "test:browser:headed": "npm run prepare:chrome && playwright test --headed",
     "test:browser:firefox": "npm run prepare:firefox && node --test tests/firefox/runtime.js",
+    "test:live-sites": "npm run prepare:chrome && node scripts/run-live-sites.js",
     "check": "node scripts/check-project.js",
     "verify": "npm run check && npm test"
   },

@@ -20,7 +20,7 @@ const ADDON_NAME = "Currency Converter Pro";
 const SHOP_HTML = fs.readFileSync(path.join(ROOT, "tests", "fixtures", "shop.html"), "utf8");
 const FIREFOX_TIMEOUT_MS = 30_000;
 
-test("Firefox toolbar grant and popup handlers convert and undo a real webpage", { timeout: 120_000 }, async () => {
+test("Firefox page access and popup handlers convert and undo a real webpage", { timeout: 120_000 }, async () => {
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "ccp-firefox-runtime-"));
   let fixture;
   let driver;
@@ -39,7 +39,7 @@ test("Firefox toolbar grant and popup handlers convert and undo a real webpage",
     assert.equal(installedAddonId, ADDON_ID);
 
     const extensionOrigin = await getExtensionOrigin(driver, ADDON_ID);
-    await seedExtensionState(driver, extensionOrigin);
+    await seedExtensionState(driver, extensionOrigin, fixture.url);
 
     await driver.get(fixture.url);
     await driver.wait(until.elementLocated(By.id("initial")), FIREFOX_TIMEOUT_MS);
@@ -47,10 +47,8 @@ test("Firefox toolbar grant and popup handlers convert and undo a real webpage",
     const shopWindow = await driver.getWindowHandle();
     const popupUrl = `${extensionOrigin}/popup/popup.html`;
 
-    // Firefox's XUL action popup is not exposed as a WebDriver BiDi context. Open it once
-    // for the real activeTab grant, then drive the same popup document in a background tab
-    // while the shop stays active (the same direct-popup model used by the Chromium suite).
-    await grantActiveTabFromAction(driver, ADDON_ID, ADDON_NAME);
+    // Firefox's XUL action popup is not exposed as a WebDriver BiDi context, so drive
+    // the same popup document in a background tab while the shopping page stays active.
     await driver.switchTo().newWindow("tab");
     await driver.get(popupUrl);
     const popupScript = await driver.getBidi();
@@ -73,13 +71,7 @@ test("Firefox toolbar grant and popup handlers convert and undo a real webpage",
       popupContext.context,
       "document.querySelector('#rememberSiteHelp').textContent"
     );
-    const activeTabDiagnostic = await evaluatePopup(
-      popupScript,
-      popupContext.context,
-      "browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => " +
-        "JSON.stringify(tabs.map(({ id, url, active }) => ({ id, url, active }))))"
-    );
-    assert.match(rememberSiteHelp, /non-default port/, activeTabDiagnostic);
+    assert.match(rememberSiteHelp, /Automatically converts this website/);
     await evaluatePopup(
       popupScript,
       popupContext.context,
@@ -232,7 +224,7 @@ async function getExtensionOrigin(driver, addonId) {
   }
 }
 
-async function seedExtensionState(driver, extensionOrigin) {
+async function seedExtensionState(driver, extensionOrigin, fixtureUrl) {
   await driver.get(`${extensionOrigin}/popup/popup.html`);
   await driver.wait(until.elementLocated(By.id("convertSite")), FIREFOX_TIMEOUT_MS);
   const now = new Date().toISOString();
@@ -251,12 +243,15 @@ async function seedExtensionState(driver, extensionOrigin) {
   `, {
     sync: {
       enabled: true,
-      fromCurrency: "USD",
+      fromCurrency: "AUTO",
       toCurrency: "EUR",
       displayMode: "beside",
       showPagePrompt: false
     },
     local: {
+      siteSourceCurrencies: {
+        [new URL(fixtureUrl).origin]: "USD"
+      },
       providerCurrencyCatalog: {
         version: 1,
         fetchedAt: now,

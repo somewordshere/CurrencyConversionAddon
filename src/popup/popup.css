@@ -342,7 +342,7 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 .display-row select { min-height: 34px; border-radius: 6px; }
 
-.remember-row, .prompt-row {
+.remember-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -350,7 +350,7 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: 0.55; }
   cursor: pointer;
   color: var(--text-tertiary);
 }
-.remember-row input[type="checkbox"], .prompt-row input[type="checkbox"] {
+.remember-row input[type="checkbox"] {
   width: 16px;
   height: 16px;
   min-height: 16px;
@@ -358,7 +358,7 @@ button:disabled, select:disabled { cursor: not-allowed; opacity: 0.55; }
   flex-shrink: 0;
   cursor: pointer;
 }
-.remember-row > span, .prompt-row > span {
+.remember-row > span {
   font-size: 12px;
   line-height: 1.4;
 }

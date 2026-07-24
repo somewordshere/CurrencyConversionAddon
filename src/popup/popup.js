@@ -7,7 +7,6 @@ const fromCurrencyList = document.getElementById("fromCurrencyList");
 const toCurrencyList = document.getElementById("toCurrencyList");
 const swapButton = document.getElementById("swapCurrencies");
 const displayModeSelect = document.getElementById("displayMode");
-const showPagePromptInput = document.getElementById("showPagePrompt");
 const rememberSiteInput = document.getElementById("rememberSite");
 const rememberSiteHelpNode = document.getElementById("rememberSiteHelp");
 const convertSiteButton = document.getElementById("convertSite");
@@ -53,7 +52,7 @@ async function initialize() {
   const activePageUrl = activeTab?.url || origin;
   const [currenciesResult, settingsResult, statusResult, localPreferences] = await Promise.all([
     ExtensionAPI.runtime.sendMessage({ type: M.GET_CURRENCIES }),
-    ExtensionAPI.runtime.sendMessage({ type: M.GET_SETTINGS }),
+    ExtensionAPI.runtime.sendMessage({ type: M.GET_SETTINGS, origin: activePageUrl }),
     activePageUrl
       ? ExtensionAPI.runtime.sendMessage({ type: M.GET_SITE_STATUS, origin: activePageUrl })
       : Promise.resolve({ ok: false, remembered: false }),
@@ -72,7 +71,6 @@ async function initialize() {
   toCurrencySelect.value = settings.toCurrency;
   syncCurrencyComboboxes();
   displayModeSelect.value = settings.displayMode;
-  showPagePromptInput.checked = settings.showPagePrompt;
   siteStatus = statusResult;
   rememberSiteInput.checked = Boolean(statusResult?.remembered);
   rememberSiteInput.disabled = !statusResult?.ok;
@@ -103,7 +101,6 @@ async function initialize() {
   fromCurrencySelect.addEventListener("change", saveSettings);
   toCurrencySelect.addEventListener("change", saveSettings);
   displayModeSelect.addEventListener("change", saveSettings);
-  showPagePromptInput.addEventListener("change", saveSettings);
   swapButton.addEventListener("click", swapCurrencies);
   rememberSiteInput.addEventListener("change", handleRememberSiteChange);
   convertSiteButton.addEventListener("click", convertWholeSite);
@@ -305,17 +302,19 @@ async function saveSettings() {
     enabled: enabledInput.checked,
     fromCurrency: fromCurrencySelect.value,
     toCurrency: toCurrencySelect.value,
-    displayMode: displayModeSelect.value,
-    showPagePrompt: showPagePromptInput.checked
+    displayMode: displayModeSelect.value
   };
-  const result = await ExtensionAPI.runtime.sendMessage({ type: M.UPDATE_SETTINGS, payload });
+  const result = await ExtensionAPI.runtime.sendMessage({
+    type: M.UPDATE_SETTINGS,
+    origin: activeTab?.url,
+    payload
+  });
   if (!result?.ok) {
     if (result?.settings) {
       fromCurrencySelect.value = result.settings.fromCurrency;
       toCurrencySelect.value = result.settings.toCurrency;
       displayModeSelect.value = result.settings.displayMode;
       enabledInput.checked = result.settings.enabled;
-      showPagePromptInput.checked = result.settings.showPagePrompt;
       syncCurrencyComboboxes();
       scheduleQuickConversion({ immediate: true });
     }
@@ -359,7 +358,7 @@ function updateSwapState() {
 
 async function handleRememberSiteChange() {
   const origin = getActiveOrigin();
-  if (!origin || !siteStatus?.pattern) {
+  if (!origin || !siteStatus?.ok) {
     rememberSiteInput.checked = false;
     setStatus("This page cannot be remembered.", "error");
     return;
@@ -368,12 +367,6 @@ async function handleRememberSiteChange() {
   rememberSiteInput.disabled = true;
   try {
     if (rememberSiteInput.checked) {
-      const granted = await ExtensionAPI.permissions.request({ origins: [siteStatus.pattern] });
-      if (!granted) {
-        rememberSiteInput.checked = false;
-        setStatus("Site access was not granted.", "error");
-        return;
-      }
       const result = await ExtensionAPI.runtime.sendMessage({ type: M.REMEMBER_SITE, origin });
       if (!result?.ok) throw new Error(result?.error || "Could not remember this site.");
       siteStatus.remembered = true;
@@ -386,7 +379,7 @@ async function handleRememberSiteChange() {
       siteStatus.remembered = false;
       clearSiteButton.hidden = true;
       updateSecondaryActions();
-      setStatus("Automatic access removed for this website.", "success");
+      setStatus("Automatic conversion disabled for this website.", "success");
     }
   } catch (error) {
     rememberSiteInput.checked = Boolean(siteStatus?.remembered);
@@ -445,7 +438,7 @@ async function clearWholeSite() {
   clearSiteButton.hidden = true;
   updateSecondaryActions();
   updateSiteState();
-  setStatus("Conversion cleared and site access removed.", "success");
+  setStatus("Conversion cleared and automatic conversion disabled.", "success");
 }
 
 async function clearCurrentPage() {
@@ -584,7 +577,7 @@ function setQuickConversionState(result, details, kind, fullDetails = details) {
 function updateSiteState() {
   const hostname = activeTab?.url ? safeUrl(activeTab.url)?.hostname : "";
   siteStateNode.textContent = siteStatus?.remembered
-    ? `${hostname || "Current site"} · automatic access on`
+    ? `${hostname || "Current site"} · automatic conversion on`
     : hostname || "Current page";
 }
 
