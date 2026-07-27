@@ -5,17 +5,59 @@ const { spawnSync } = require("node:child_process");
 
 const root = path.resolve(__dirname, "..");
 const packageJson = readJson("package.json");
+const packageLock = readJson("package-lock.json");
 const baseManifest = readJson("manifests/base.json");
 const chromeManifest = readJson("manifests/chrome.json");
 const firefoxManifest = readJson("manifests/firefox.json");
+const gitignore = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
+const nodeVersion = fs.readFileSync(path.join(root, ".nvmrc"), "utf8").trim();
+const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
 
 assert.equal(baseManifest.manifest_version, 3);
 assert.equal(baseManifest.version, packageJson.version, "manifest and package versions must match");
 assert.ok(baseManifest.description.length <= 132, "manifest description must not exceed 132 characters");
-assert.ok(baseManifest.host_permissions.includes("http://*/*"));
-assert.ok(baseManifest.host_permissions.includes("https://*/*"));
-assert.equal(baseManifest.optional_host_permissions, undefined);
-assert.deepEqual(baseManifest.content_scripts[0].matches, ["http://*/*", "https://*/*"]);
+assert.equal(packageLock.version, packageJson.version, "lockfile and package versions must match");
+assert.equal(nodeVersion, "22", ".nvmrc must match the Node.js version used by CI");
+assert.equal(
+  packageLock.packages?.[""]?.version,
+  packageJson.version,
+  "lockfile root package version must match"
+);
+assert.ok(
+  readme.includes(`**Current version:** ${packageJson.version}`),
+  "README current version must match the package"
+);
+assert.ok(
+  readme.includes(`release/${packageJson.version}/currency-converter-pro-${packageJson.version}-chrome.zip`) &&
+    readme.includes(`release/${packageJson.version}/currency-converter-pro-${packageJson.version}-firefox.zip`),
+  "README release links must match the package version"
+);
+assert.ok(
+  changelog.includes(`## ${packageJson.version} -`),
+  "changelog must include the package version"
+);
+assert.deepEqual(
+  baseManifest.host_permissions,
+  ["https://api.frankfurter.dev/*"],
+  "required host access must be limited to the exchange-rate provider"
+);
+assert.equal(Object.hasOwn(baseManifest, "optional_host_permissions"), false);
+assert.ok(Array.isArray(baseManifest.content_scripts) && baseManifest.content_scripts.length === 1);
+assert.deepEqual(
+  baseManifest.content_scripts[0].matches,
+  ["http://*/*", "https://*/*"],
+  "ordinary websites must receive the always-on local price detector"
+);
+assert.equal(baseManifest.content_scripts[0].run_at, "document_idle");
+assert.ok(baseManifest.permissions.includes("activeTab"));
+assert.ok(baseManifest.permissions.includes("scripting"));
+assert.match(gitignore, /^artifacts\/$/m, "generated browser artifacts must stay ignored");
+assert.match(
+  gitignore,
+  /^release\/\*\/\*\/$/m,
+  "unpacked release directories must stay ignored"
+);
 assert.equal(chromeManifest.background.service_worker, "background/chrome-worker.js");
 assert.ok(Array.isArray(firefoxManifest.background.scripts));
 assert.equal(firefoxManifest.browser_specific_settings.gecko.strict_min_version, "140.0");

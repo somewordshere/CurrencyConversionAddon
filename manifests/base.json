@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Currency Converter Pro",
-  "version": "1.7.2",
-  "description": "Convert webpage prices privately with one-click controls, searchable currencies, automatic detection, and cached exchange rates.",
+  "version": "1.8.0",
+  "description": "Detect webpage prices locally and offer fast one-click currency conversion as you browse.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -16,8 +16,6 @@
     "scripting"
   ],
   "host_permissions": [
-    "http://*/*",
-    "https://*/*",
     "https://api.frankfurter.dev/*"
   ],
   "content_scripts": [
@@ -39,7 +37,8 @@
       "css": [
         "content/styles.css"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "action": {

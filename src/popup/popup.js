@@ -1,4 +1,5 @@
 const enabledInput = document.getElementById("enabled");
+const popupAppNode = document.getElementById("popupApp");
 const fromCurrencySelect = document.getElementById("fromCurrency");
 const toCurrencySelect = document.getElementById("toCurrency");
 const fromCurrencySearch = document.getElementById("fromCurrencySearch");
@@ -7,6 +8,7 @@ const fromCurrencyList = document.getElementById("fromCurrencyList");
 const toCurrencyList = document.getElementById("toCurrencyList");
 const swapButton = document.getElementById("swapCurrencies");
 const displayModeSelect = document.getElementById("displayMode");
+const showPagePromptInput = document.getElementById("showPagePrompt");
 const rememberSiteInput = document.getElementById("rememberSite");
 const rememberSiteHelpNode = document.getElementById("rememberSiteHelp");
 const convertSiteButton = document.getElementById("convertSite");
@@ -20,6 +22,11 @@ const siteStateNode = document.getElementById("siteState");
 const quickAmountInput = document.getElementById("quickAmount");
 const quickResultNode = document.getElementById("quickResult");
 const quickRateInfoNode = document.getElementById("quickRateInfo");
+const quickConverterNode = document.getElementById("quickConverter");
+const pageOptionsNode = document.getElementById("pageOptions");
+const quickConverterFieldsNode = document.getElementById("quickConverterFields");
+const quickSourceRequiredNode = document.getElementById("quickSourceRequired");
+const chooseQuickSourceButton = document.getElementById("chooseQuickSource");
 const currencyNames = new Intl.DisplayNames([navigator.language || "en"], { type: "currency" });
 const M = CurrencyMessages;
 const CONTENT_SCRIPT_FILES = [
@@ -38,18 +45,32 @@ let availableRatesSource = null;
 let catalogWarning = null;
 let quickConversionTimer = null;
 let quickConversionRequestId = 0;
+let pageConversionError = null;
+let primaryActionBusy = false;
+let popupReady = false;
+let popupLocked = false;
+let confirmedSettings = null;
+let settingsWriteRevision = 0;
+let latestSettingsWrite = Promise.resolve(true);
+let latestDispatchedSettingsWrite = Promise.resolve(null);
 const defaultRememberSiteHelp = rememberSiteHelpNode.textContent;
 const currencyComboboxes = [
   createCurrencyCombobox(fromCurrencySelect, fromCurrencySearch, fromCurrencyList),
   createCurrencyCombobox(toCurrencySelect, toCurrencySearch, toCurrencyList)
 ];
 
-initialize().catch((error) => setStatus(error.message || "Could not initialize the extension.", "error"));
+initialize().then(() => {
+  popupReady = true;
+  setPopupInteractivity(true);
+}).catch(handleInitializationFailure);
 
 async function initialize() {
   [activeTab] = await ExtensionAPI.tabs.query({ active: true, currentWindow: true });
   const origin = getActiveOrigin();
   const activePageUrl = activeTab?.url || origin;
+  pageConversionError = activeTab?.id
+    ? CurrencyPageAccess.unsupportedPageMessage(activePageUrl)
+    : "No active webpage is available.";
   const [currenciesResult, settingsResult, statusResult, localPreferences] = await Promise.all([
     ExtensionAPI.runtime.sendMessage({ type: M.GET_CURRENCIES }),
     ExtensionAPI.runtime.sendMessage({ type: M.GET_SETTINGS, origin: activePageUrl }),
@@ -65,22 +86,31 @@ async function initialize() {
   catalogWarning = currenciesResult.warning || null;
   recentCurrencies = localPreferences.recentCurrencies || [];
   populateCurrencyLists();
-  const settings = settingsResult.settings;
+  confirmedSettings = normalizeSettingsSnapshot(settingsResult.settings);
+  if (!confirmedSettings) throw new Error("The extension returned invalid settings.");
+  latestDispatchedSettingsWrite = Promise.resolve({ ok: true, settings: confirmedSettings });
+  const settings = confirmedSettings;
   enabledInput.checked = settings.enabled;
   fromCurrencySelect.value = settings.fromCurrency;
   toCurrencySelect.value = settings.toCurrency;
   syncCurrencyComboboxes();
   displayModeSelect.value = settings.displayMode;
+  showPagePromptInput.checked = settings.showPagePrompt;
   siteStatus = statusResult;
   rememberSiteInput.checked = Boolean(statusResult?.remembered);
-  rememberSiteInput.disabled = !statusResult?.ok;
+  rememberSiteInput.disabled = true;
   rememberSiteInput.title = statusResult?.ok
     ? ""
     : statusResult?.error || "This page cannot be remembered.";
+  const activeHostname = safeUrl(activePageUrl)?.hostname;
   rememberSiteHelpNode.textContent = statusResult?.ok
-    ? defaultRememberSiteHelp
+    ? activeHostname
+      ? statusResult.requiresPermission === false
+        ? `Converts prices automatically on ${activeHostname}. Price scanning stays on this device.`
+        : `Allows automatic conversion on ${activeHostname}. Your browser will ask once; page contents stay on this device, and you can remove access here.`
+      : defaultRememberSiteHelp
     : statusResult?.error || "This page cannot be remembered.";
-  clearSiteButton.hidden = !statusResult?.remembered;
+  clearSiteButton.hidden = !statusResult?.cleanupRequired;
   let badgeText = "";
   if (activeTab?.id) {
     try {
@@ -89,25 +119,38 @@ async function initialize() {
       // Restricted pages may not expose tab-scoped action state.
     }
   }
-  clearPageButton.disabled = !badgeText;
+  clearPageButton.hidden = !badgeText;
+  clearPageButton.disabled = true;
   updateSecondaryActions();
   updateSiteState();
   siteStateNode.title = `${currencies.length} provider currencies available${
     currenciesResult.stale ? " from cached catalog" : ""
   }${catalogWarning ? `. ${catalogWarning}` : ""}`;
   updateSwapState();
+  updatePrimaryActionLabel();
+  if (pageConversionError) {
+    setStatus(`${pageConversionError} You can still convert a custom amount.`, "warning");
+  }
 
-  enabledInput.addEventListener("change", saveSettings);
-  fromCurrencySelect.addEventListener("change", saveSettings);
-  toCurrencySelect.addEventListener("change", saveSettings);
-  displayModeSelect.addEventListener("change", saveSettings);
+  enabledInput.addEventListener("change", () => {
+    updatePrimaryActionLabel();
+    saveSettings();
+  });
+  fromCurrencySelect.addEventListener("change", () => saveSettings());
+  toCurrencySelect.addEventListener("change", () => saveSettings());
+  displayModeSelect.addEventListener("change", () => saveSettings());
+  showPagePromptInput.addEventListener("change", () => saveSettings());
   swapButton.addEventListener("click", swapCurrencies);
   rememberSiteInput.addEventListener("change", handleRememberSiteChange);
   convertSiteButton.addEventListener("click", convertWholeSite);
   clearPageButton.addEventListener("click", clearCurrentPage);
   clearSiteButton.addEventListener("click", clearWholeSite);
   quickAmountInput.addEventListener("input", scheduleQuickConversion);
-  await calculateQuickConversion();
+  chooseQuickSourceButton.addEventListener("click", () => fromCurrencySearch.focus());
+  quickConverterNode.addEventListener("toggle", () => {
+    if (quickConverterNode.open) scheduleQuickConversion({ immediate: true });
+  });
+  if (quickConverterNode.open) await calculateQuickConversion();
 
   const shortcutKeyNode = document.getElementById("shortcutKey");
   if (shortcutKeyNode && navigator.userAgent.includes("Mac")) {
@@ -288,52 +331,271 @@ function syncCurrencyComboboxes() {
   currencyComboboxes.forEach(syncCurrencyCombobox);
 }
 
-async function saveSettings() {
-  if (!["AUTO", ...currencies].includes(fromCurrencySelect.value) ||
-      !currencies.includes(toCurrencySelect.value)) {
-    setStatus("Choose a currency from the suggestion list.", "error");
-    return;
+function saveSettings({ syncPage = true } = {}) {
+  const revision = ++settingsWriteRevision;
+  const payload = readSettingsFromControls();
+  const validationError = validateSettingsPayload(payload);
+  let outcomePromise;
+  if (validationError) {
+    outcomePromise = reconcileLocalValidationFailure(validationError);
+  } else {
+    outcomePromise = persistSettingsPayload(payload);
+    latestDispatchedSettingsWrite = outcomePromise;
   }
-  if (fromCurrencySelect.value === toCurrencySelect.value) {
-    setStatus("Choose two different currencies.", "error");
-    return;
+  const completion = outcomePromise.then((outcome) => {
+    if (revision !== settingsWriteRevision) return Boolean(outcome?.ok);
+    return settleSettingsOutcome(outcome, payload, { revision, syncPage });
+  }).catch((error) => {
+    if (revision === settingsWriteRevision) {
+      lockPopupInteractions(
+        `Settings could not be saved or reloaded. ${errorMessage(error)} Close and reopen the popup to try again.`
+      );
+    }
+    return false;
+  });
+  const waitForLatest = completion.then((saved) => {
+    if (revision === settingsWriteRevision) return saved;
+    return latestSettingsWrite;
+  });
+  latestSettingsWrite = waitForLatest;
+  return waitForLatest;
+}
+
+async function reconcileLocalValidationFailure(validationError) {
+  const pendingWrite = latestDispatchedSettingsWrite;
+  let priorOutcome = null;
+  try {
+    priorOutcome = await pendingWrite;
+  } catch (_error) {
+    // Reload below if an unexpected write failure escaped normal reconciliation.
   }
-  const payload = {
+  const priorSettings = normalizeSettingsSnapshot(priorOutcome?.settings);
+  const actualSettings = priorSettings || await fetchActualSettings();
+  if (!actualSettings && priorOutcome?.fatal) {
+    return {
+      ok: false,
+      fatal: true,
+      error: `${validationError} ${priorOutcome.error || "Current settings could not be reloaded."}`
+    };
+  }
+  return {
+    ok: false,
+    settings: actualSettings || confirmedSettings,
+    error: validationError
+  };
+}
+
+function handleInitializationFailure(error) {
+  popupLocked = true;
+  siteStateNode.textContent = "Popup unavailable";
+  setPopupInteractivity(false);
+  setStatus(
+    `Currency Converter Pro could not start. ${errorMessage(error)} Close and reopen the popup to try again.`,
+    "error"
+  );
+}
+
+function lockPopupInteractions(message) {
+  popupLocked = true;
+  setPopupInteractivity(false);
+  setStatus(message, "error");
+}
+
+function setPopupInteractivity(enabled) {
+  const interactive = Boolean(enabled && popupReady && !popupLocked);
+  popupAppNode.setAttribute("aria-busy", String(!popupReady && !popupLocked));
+  quickConverterNode.inert = !interactive;
+  pageOptionsNode.inert = !interactive;
+
+  for (const control of [
+    fromCurrencySelect,
+    toCurrencySelect,
+    fromCurrencySearch,
+    toCurrencySearch,
+    swapButton,
+    displayModeSelect,
+    showPagePromptInput,
+    enabledInput,
+    quickAmountInput,
+    chooseQuickSourceButton
+  ]) {
+    control.disabled = !interactive;
+  }
+
+  rememberSiteInput.disabled = !interactive || !siteStatus?.ok;
+  if (!interactive) {
+    clearPageButton.disabled = true;
+    clearSiteButton.disabled = true;
+  }
+  updateSecondaryActions();
+  updatePrimaryActionLabel();
+}
+
+function readSettingsFromControls() {
+  return {
     enabled: enabledInput.checked,
     fromCurrency: fromCurrencySelect.value,
     toCurrency: toCurrencySelect.value,
-    displayMode: displayModeSelect.value
+    displayMode: displayModeSelect.value,
+    showPagePrompt: showPagePromptInput.checked
   };
-  const result = await ExtensionAPI.runtime.sendMessage({
-    type: M.UPDATE_SETTINGS,
-    origin: activeTab?.url,
-    payload
-  });
-  if (!result?.ok) {
-    if (result?.settings) {
-      fromCurrencySelect.value = result.settings.fromCurrency;
-      toCurrencySelect.value = result.settings.toCurrency;
-      displayModeSelect.value = result.settings.displayMode;
-      enabledInput.checked = result.settings.enabled;
-      syncCurrencyComboboxes();
-      scheduleQuickConversion({ immediate: true });
+}
+
+function validateSettingsPayload(payload) {
+  if (!["AUTO", ...currencies].includes(payload.fromCurrency) ||
+      !currencies.includes(payload.toCurrency)) {
+    return "Choose a currency from the suggestion list.";
+  }
+  if (payload.fromCurrency === payload.toCurrency) return "Choose two different currencies.";
+  return null;
+}
+
+async function persistSettingsPayload(payload) {
+  let result;
+  try {
+    result = await ExtensionAPI.runtime.sendMessage({
+      type: M.UPDATE_SETTINGS,
+      origin: activeTab?.url,
+      payload
+    });
+  } catch (error) {
+    console.error("Currency Converter Pro could not confirm the settings update.", error);
+    return reconcileSettingsAfterAmbiguousFailure(payload);
+  }
+
+  const returnedSettings = normalizeSettingsSnapshot(result?.settings);
+  if (result?.ok === true && returnedSettings) {
+    return { ok: true, settings: returnedSettings };
+  }
+  if (result?.ok === false && returnedSettings) {
+    return {
+      ok: false,
+      settings: returnedSettings,
+      error: result.error || "Could not save settings."
+    };
+  }
+  return reconcileSettingsAfterAmbiguousFailure(payload, result?.error);
+}
+
+async function reconcileSettingsAfterAmbiguousFailure(payload, reportedError) {
+  const actualSettings = await fetchActualSettings();
+  if (!actualSettings) {
+    return {
+      ok: false,
+      fatal: true,
+      error: "The settings update could not be confirmed, and the current settings could not be reloaded. Close and reopen the popup to try again."
+    };
+  }
+  if (settingsSnapshotsMatch(actualSettings, payload)) {
+    return { ok: true, settings: actualSettings, reconciled: true };
+  }
+  return {
+    ok: false,
+    settings: actualSettings,
+    error: reportedError
+      ? `${reportedError} The popup reloaded the current settings.`
+      : "The settings update could not be confirmed. The popup reloaded the current settings."
+  };
+}
+
+async function fetchActualSettings() {
+  try {
+    const result = await ExtensionAPI.runtime.sendMessage({
+      type: M.GET_SETTINGS,
+      origin: activeTab?.url
+    });
+    return result?.ok ? normalizeSettingsSnapshot(result.settings) : null;
+  } catch (error) {
+    console.error("Currency Converter Pro could not reload the current settings.", error);
+    return null;
+  }
+}
+
+async function settleSettingsOutcome(outcome, payload, { revision, syncPage }) {
+  if (!outcome.ok) {
+    if (outcome.settings) {
+      confirmedSettings = normalizeSettingsSnapshot(outcome.settings);
+      applySettingsToControls(confirmedSettings);
     }
-    setStatus(result?.error || "Could not save settings.", "error");
-    return;
+    if (outcome.fatal) lockPopupInteractions(outcome.error);
+    else setStatus(outcome.error || "Could not save settings.", "error");
+    return false;
   }
-  updateSwapState();
-  await storeRecentCurrencies(payload);
+
+  confirmedSettings = normalizeSettingsSnapshot(outcome.settings) || payload;
+  applySettingsToControls(confirmedSettings);
+  try {
+    await storeRecentCurrencies(confirmedSettings);
+  } catch (_error) {
+    // Recent currencies are a convenience and do not affect whether the settings were saved.
+  }
+  if (revision !== settingsWriteRevision) return true;
+
   scheduleQuickConversion({ immediate: true });
-  setStatus(payload.enabled ? "Webpage conversion is ready." : "Webpage conversion is off.", "success");
-  const pageResult = await sendToActivePage(
-    payload.enabled ? M.SHOW_CONVERT_PROMPT : M.CLEAR_SITE_CONVERSION,
-    payload.enabled ? {} : { suppressPrompt: true }
+  setStatus(
+    confirmedSettings.enabled
+      ? "Webpage conversion is ready."
+      : siteStatus?.remembered
+        ? "Converter is off. Automatic conversion is paused; the site choice remains."
+        : "Converter is off.",
+    "success"
   );
-  if (!pageResult?.ok) setStatus(pageResult?.error || "This page cannot be accessed.", "error");
-  else if (!payload.enabled) {
-    clearPageButton.disabled = true;
-    updateSecondaryActions();
+  if (syncPage) {
+    const pageResult = await sendToActivePage(
+      confirmedSettings.enabled ? M.SHOW_CONVERT_PROMPT : M.CLEAR_SITE_CONVERSION,
+      confirmedSettings.enabled ? {} : { suppressPrompt: true }
+    );
+    if (revision !== settingsWriteRevision) return true;
+    if (!pageResult?.ok) setStatus(pageResult?.error || "This page cannot be accessed.", "error");
+    else if (!confirmedSettings.enabled) {
+      clearPageButton.disabled = true;
+      clearPageButton.hidden = true;
+      updateSecondaryActions();
+    }
   }
+  updateSiteState();
+  return true;
+}
+
+function normalizeSettingsSnapshot(settings) {
+  if (!settings || typeof settings !== "object" ||
+      typeof settings.enabled !== "boolean" ||
+      typeof settings.fromCurrency !== "string" ||
+      typeof settings.toCurrency !== "string" ||
+      typeof settings.displayMode !== "string" ||
+      typeof settings.showPagePrompt !== "boolean") {
+    return null;
+  }
+  return {
+    enabled: settings.enabled,
+    fromCurrency: settings.fromCurrency,
+    toCurrency: settings.toCurrency,
+    displayMode: settings.displayMode,
+    showPagePrompt: settings.showPagePrompt
+  };
+}
+
+function settingsSnapshotsMatch(left, right) {
+  return Boolean(left && right) &&
+    left.enabled === right.enabled &&
+    left.fromCurrency === right.fromCurrency &&
+    left.toCurrency === right.toCurrency &&
+    left.displayMode === right.displayMode &&
+    left.showPagePrompt === right.showPagePrompt;
+}
+
+function applySettingsToControls(settings) {
+  if (!settings) return;
+  enabledInput.checked = settings.enabled;
+  fromCurrencySelect.value = settings.fromCurrency;
+  toCurrencySelect.value = settings.toCurrency;
+  displayModeSelect.value = settings.displayMode;
+  showPagePromptInput.checked = settings.showPagePrompt;
+  syncCurrencyComboboxes();
+  updatePrimaryActionLabel();
+  updateSwapState();
+  updateSiteState();
+  scheduleQuickConversion({ immediate: true });
 }
 
 function swapCurrencies() {
@@ -358,61 +620,163 @@ function updateSwapState() {
 
 async function handleRememberSiteChange() {
   const origin = getActiveOrigin();
-  if (!origin || !siteStatus?.ok) {
+  if (!origin || !siteStatus?.pattern) {
     rememberSiteInput.checked = false;
     setStatus("This page cannot be remembered.", "error");
     return;
   }
 
   rememberSiteInput.disabled = true;
+  let newlyGrantedPattern = null;
+  let setupFailureState = null;
   try {
     if (rememberSiteInput.checked) {
+      if (siteStatus.requiresPermission !== false) {
+        const granted = await ExtensionAPI.permissions.request({ origins: [siteStatus.pattern] });
+        if (!granted) {
+          rememberSiteInput.checked = false;
+          setStatus("Access was not granted. Automatic conversion is still off.", "error");
+          return;
+        }
+        newlyGrantedPattern = siteStatus.pattern;
+      }
       const result = await ExtensionAPI.runtime.sendMessage({ type: M.REMEMBER_SITE, origin });
-      if (!result?.ok) throw new Error(result?.error || "Could not remember this site.");
+      if (!result?.ok) {
+        setupFailureState = result;
+        siteStatus.remembered = Boolean(result?.remembered);
+        siteStatus.hasPermission = result?.permissionRemaining === true;
+        siteStatus.revocablePermission = result?.permissionRemaining === true;
+        throw new Error(result?.error || "Could not remember this site.");
+      }
+      newlyGrantedPattern = null;
       siteStatus.remembered = true;
-      clearSiteButton.hidden = false;
-      updateSecondaryActions();
-      setStatus("This website will convert automatically.", "success");
-    } else {
-      const result = await ExtensionAPI.runtime.sendMessage({ type: M.FORGET_SITE, origin });
-      if (!result?.ok) throw new Error(result?.error || "Could not forget this site.");
-      siteStatus.remembered = false;
+      siteStatus.hasPermission = true;
+      siteStatus.revocablePermission = siteStatus.requiresPermission !== false;
       clearSiteButton.hidden = true;
       updateSecondaryActions();
-      setStatus("Automatic conversion disabled for this website.", "success");
+      setStatus(`Automatic conversion is on for ${safeUrl(origin)?.hostname || "this site"}.`, "success");
+    } else {
+      const pageClearResult = await sendToActivePage(M.CLEAR_SITE_CONVERSION, {
+        forgetSite: false,
+        suppressPrompt: true
+      });
+      const result = await ExtensionAPI.runtime.sendMessage({ type: M.FORGET_SITE, origin });
+      if (!result?.ok) {
+        siteStatus.remembered = Boolean(result?.remembered);
+        siteStatus.hasPermission = result?.permissionRemaining === true;
+        clearSiteButton.hidden = false;
+        throw new Error(result?.error || "Could not disable automatic conversion for this site.");
+      }
+      siteStatus.remembered = false;
+      siteStatus.hasPermission = siteStatus.requiresPermission === false;
+      siteStatus.revocablePermission = false;
+      clearSiteButton.hidden = true;
+      if (pageClearResult?.ok) {
+        clearPageButton.disabled = true;
+        clearPageButton.hidden = true;
+      }
+      updateSecondaryActions();
+      setStatus(
+        pageClearResult?.ok
+          ? siteStatus.requiresPermission === false
+            ? `Automatic conversion is off for ${safeUrl(origin)?.hostname || "this site"}. Price detection remains available.`
+            : `Automatic conversion is off and access to ${safeUrl(origin)?.hostname || "this site"} was removed.`
+          : siteStatus.requiresPermission === false
+            ? "Automatic conversion is off. Reload this page if an existing conversion remains visible."
+            : "Site access was removed. Reload this page if an existing conversion remains visible.",
+        pageClearResult?.ok ? "success" : "warning"
+      );
     }
   } catch (error) {
+    if (newlyGrantedPattern) {
+      try {
+        await ExtensionAPI.permissions.remove({ origins: [newlyGrantedPattern] });
+      } catch (_cleanupError) {
+        // The background also attempts rollback; the visible error still tells the user setup failed.
+      }
+      try {
+        const refreshed = await ExtensionAPI.runtime.sendMessage({
+          type: M.GET_SITE_STATUS,
+          origin
+        });
+        if (refreshed?.ok) siteStatus = refreshed;
+      } catch (_refreshError) {
+        // Keep the conservative failure state returned by the background.
+      }
+    }
+    clearSiteButton.hidden = !(
+      siteStatus?.revocablePermission ||
+      setupFailureState?.registrationRemaining ||
+      setupFailureState?.dataRemaining
+    );
     rememberSiteInput.checked = Boolean(siteStatus?.remembered);
     setStatus(error.message, "error");
   } finally {
-    rememberSiteInput.disabled = !siteStatus?.ok;
+    rememberSiteInput.disabled = !popupReady || popupLocked || !siteStatus?.ok;
     updateSiteState();
+    updateSecondaryActions();
   }
 }
 
 async function convertWholeSite() {
-  if (!enabledInput.checked) {
-    setStatus("Turn the extension on first.", "error");
+  if (pageConversionError) {
+    setStatus(`${pageConversionError} You can still convert a custom amount.`, "warning");
     return;
   }
-  setBusy(true);
+  const turningOn = !enabledInput.checked;
+  if (turningOn) {
+    enabledInput.checked = true;
+    setBusy(true, { turningOn: true });
+    const saved = await saveSettings({ syncPage: false });
+    if (!saved) {
+      setBusy(false);
+      updateSiteState();
+      return;
+    }
+  } else {
+    setBusy(true);
+  }
   setStatus("Scanning prices…");
   const result = await sendToActivePage(M.RUN_SITE_CONVERSION);
   setBusy(false);
-  if (!result?.ok) {
-    setStatus(result?.error || "Could not convert this page.", "error");
+  if (result?.cancelled) {
+    clearPageButton.hidden = true;
+    updateSecondaryActions();
+    setStatus(
+      enabledInput.checked
+        ? "Conversion cancelled."
+        : siteStatus?.remembered
+          ? "Converter is off. Automatic conversion is paused; the site choice remains."
+          : "Converter is off.",
+      enabledInput.checked ? "warning" : "success"
+    );
+    return;
+  }
+  if (!result?.ok && !Number.isFinite(result?.count)) {
+    setStatus(
+      turningOn
+        ? `The converter is on, but this page could not be converted. ${
+          result?.error || "Try again."
+        }`
+        : result?.error || "Could not convert this page.",
+      "error"
+    );
     return;
   }
   lastDetectedCurrency = result.detectedCurrency || null;
   updateSwapState();
   scheduleQuickConversion({ immediate: true });
-  clearPageButton.disabled = false;
+  const hasConversions = result.count > 0;
+  clearPageButton.disabled = !hasConversions;
+  clearPageButton.hidden = !hasConversions;
   updateSecondaryActions();
   setStatus(
-    `Converted ${result.count} price${result.count === 1 ? "" : "s"}.${
-      result.scanLimited ? " Large-page scan limit reached." : ""
-    }`,
-    "success"
+    hasConversions
+      ? `Converted ${result.count} price${result.count === 1 ? "" : "s"}.${
+        result.scanLimited ? " Large-page scan limit reached." : ""
+      }`
+      : `No supported prices found on this page.${result?.error ? ` ${result.error}` : ""}`,
+    hasConversions ? "success" : "warning"
   );
   const fullRateInfo = result.rateDate
     ? `Rate date: ${result.rateDate}${result.rateProvider ? ` · ${result.rateProvider}` : ""}${
@@ -430,15 +794,24 @@ async function convertWholeSite() {
 async function clearWholeSite() {
   const result = await sendToActivePage(M.CLEAR_SITE_CONVERSION, { forgetSite: true });
   if (!result?.ok) {
+    siteStatus.remembered = Boolean(result?.remembered);
+    siteStatus.hasPermission = result?.permissionRemaining === true;
+    siteStatus.revocablePermission = result?.permissionRemaining === true;
+    rememberSiteInput.checked = Boolean(result?.remembered);
+    clearSiteButton.hidden = false;
+    updateSecondaryActions();
+    updateSiteState();
     setStatus(result?.error || "Could not clear this page.", "error");
     return;
   }
   siteStatus.remembered = false;
+  siteStatus.hasPermission = false;
   rememberSiteInput.checked = false;
+  moveFocusBeforeHiding(clearSiteButton);
   clearSiteButton.hidden = true;
   updateSecondaryActions();
   updateSiteState();
-  setStatus("Conversion cleared and automatic conversion disabled.", "success");
+  setStatus("Original prices restored and the automatic-site setting was cleared.", "success");
 }
 
 async function clearCurrentPage() {
@@ -451,18 +824,65 @@ async function clearCurrentPage() {
     result?.ok ? "success" : "error"
   );
   if (result?.ok) {
+    moveFocusBeforeHiding(clearPageButton);
     clearPageButton.disabled = true;
+    clearPageButton.hidden = true;
     updateSecondaryActions();
   }
 }
 
-function setBusy(busy) {
-  convertSiteButton.disabled = busy;
-  convertSiteButton.textContent = busy ? "Converting…" : "Convert page prices";
+function setBusy(busy, { turningOn = false } = {}) {
+  primaryActionBusy = busy;
+  convertSiteButton.disabled = busy || Boolean(pageConversionError);
+  if (busy) {
+    convertSiteButton.textContent = turningOn
+      ? "Turning on and converting…"
+      : "Converting page…";
+  } else {
+    updatePrimaryActionLabel();
+  }
+}
+
+function updatePrimaryActionLabel() {
+  if (primaryActionBusy) return;
+  if (!popupReady || popupLocked) {
+    convertSiteButton.disabled = true;
+    return;
+  }
+  if (pageConversionError) {
+    convertSiteButton.disabled = true;
+    convertSiteButton.textContent = "Page conversion unavailable";
+    return;
+  }
+  convertSiteButton.disabled = false;
+  convertSiteButton.textContent = enabledInput.checked
+    ? "Convert page prices"
+    : "Turn on and convert page";
 }
 
 function updateSecondaryActions() {
-  secondaryActionsNode.hidden = false;
+  const interactive = popupReady && !popupLocked;
+  clearPageButton.disabled = !interactive || clearPageButton.hidden;
+  clearSiteButton.disabled = !interactive || clearSiteButton.hidden;
+  secondaryActionsNode.hidden = clearPageButton.hidden && clearSiteButton.hidden;
+}
+
+function moveFocusBeforeHiding(node, wasFocused = node?.contains(document.activeElement)) {
+  if (!wasFocused) return;
+  const candidates = [
+    convertSiteButton,
+    fromCurrencySearch,
+    quickConverterNode.querySelector("summary"),
+    pageOptionsNode.querySelector("summary")
+  ];
+  const target = candidates.find((candidate) =>
+    candidate &&
+    !candidate.disabled &&
+    !candidate.hidden &&
+    !candidate.closest("[hidden]") &&
+    !candidate.closest("[inert]")
+  );
+  target?.focus();
 }
 
 function setStatus(message, kind = "") {
@@ -474,7 +894,7 @@ function setStatus(message, kind = "") {
     delete statusNode.dataset.kind;
     delete statusContainerNode.dataset.kind;
   }
-  statusContainerNode.style.display = message ? "block" : "none";
+  statusContainerNode.dataset.visible = message ? "true" : "false";
   if (message && kind === "success") replayAnimation(statusContainerNode, "is-success-pulse");
 }
 
@@ -493,6 +913,7 @@ function scheduleQuickConversion({ immediate = false } = {}) {
 async function calculateQuickConversion() {
   quickConversionTimer = null;
   const requestId = ++quickConversionRequestId;
+  if (!quickConverterNode.open) return;
   const sourceCurrency = fromCurrencySelect.value === "AUTO"
     ? lastDetectedCurrency
     : fromCurrencySelect.value;
@@ -503,9 +924,13 @@ async function calculateQuickConversion() {
     availableQuoteCurrencies = null;
     availableRatesSource = null;
     populateCurrencyLists();
-    setQuickConversionState("—", "Select a source currency to calculate.", "empty");
+    quickSourceRequiredNode.hidden = false;
+    quickConverterFieldsNode.hidden = true;
+    setQuickConversionState("Choose source", "Select a source currency above.", "empty");
     return;
   }
+  quickSourceRequiredNode.hidden = true;
+  quickConverterFieldsNode.hidden = false;
   if (!currencies.includes(sourceCurrency) || !currencies.includes(targetCurrency)) {
     setQuickConversionState("Choose currencies", "Select supported source and target currencies.", "error");
     return;
@@ -577,7 +1002,9 @@ function setQuickConversionState(result, details, kind, fullDetails = details) {
 function updateSiteState() {
   const hostname = activeTab?.url ? safeUrl(activeTab.url)?.hostname : "";
   siteStateNode.textContent = siteStatus?.remembered
-    ? `${hostname || "Current site"} · automatic conversion on`
+    ? `${hostname || "Current site"} · automatic conversion ${
+      enabledInput.checked ? "on" : "paused"
+    }`
     : hostname || "Current page";
 }
 

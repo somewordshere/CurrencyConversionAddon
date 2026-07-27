@@ -9,9 +9,15 @@
   const RATE_PROVIDER = "Frankfurter";
   let cacheWriteQueue = Promise.resolve();
   const pendingRequests = new Map();
+  const backgroundRefreshes = new Map();
 
   async function getRates(baseCurrency) {
-    const catalog = await CurrencyCatalogService.getCurrencies();
+    const catalog = await (
+      typeof CurrencyCatalogService.getCachedCurrencies === "function"
+        ? CurrencyCatalogService.getCachedCurrencies()
+        : CurrencyCatalogService.getCurrencies()
+    );
+    CurrencyCatalogService.getCurrencies().catch(() => {});
     const supportedCodes = catalog.currencies.map((currency) => currency.code);
     if (!supportedCodes.includes(baseCurrency)) {
       return { ok: false, error: `Unsupported source currency: ${baseCurrency}.` };
@@ -27,26 +33,22 @@
     const cachedBase = await readCachedBase(baseCurrency);
     if (isFresh(cachedBase, supportedCodes)) return buildSuccess(cachedBase, true, false);
 
-    try {
-      const quotes = supportedCodes.filter((currency) => currency !== baseCurrency);
-      const url = `https://api.frankfurter.dev/v2/rates?base=${encodeURIComponent(baseCurrency)}&quotes=${quotes.join(",")}`;
-      const response = await fetchWithRetry(url);
-
-      if (!response.ok) throw new Error(`Could not fetch exchange rates (${response.status}).`);
-      const parsed = parseRatesResponse(await response.json());
-      const rates = sanitizeRates(parsed.rates, supportedCodes);
-      if (!Object.keys(rates).length) {
-        throw new Error("The exchange-rate service returned no usable rates.");
-      }
-
-      const baseCache = {
-        fetchedAt: new Date().toISOString(),
-        rateDate: parsed.date || new Date().toISOString().slice(0, 10),
-        catalogSignature: supportedCodes.join(","),
-        rates: { ...rates, [baseCurrency]: 1 }
+    const cacheAgeMs = getCacheAgeMs(cachedBase);
+    if (
+      cachedBase?.rates &&
+      Object.keys(cachedBase.rates).length > 1 &&
+      Number.isFinite(cacheAgeMs) &&
+      cacheAgeMs <= MAX_STALE_AGE_MS
+    ) {
+      refreshRatesInBackground(baseCurrency, supportedCodes);
+      return {
+        ...buildSuccess(cachedBase, true, true),
+        warning: `Using cached rates that are ${describeAge(cacheAgeMs)} while fresh rates load in the background.`
       };
-      await saveBaseRates(baseCurrency, baseCache);
-      return buildSuccess(baseCache, false, false);
+    }
+
+    try {
+      return await fetchAndCacheRates(baseCurrency, supportedCodes);
     } catch (error) {
       if (cachedBase?.rates && Object.keys(cachedBase.rates).length > 1) {
         const cacheAgeMs = getCacheAgeMs(cachedBase);
@@ -70,6 +72,37 @@
         error: error instanceof Error ? error.message : "Could not load exchange rates."
       };
     }
+  }
+
+  function refreshRatesInBackground(baseCurrency, supportedCodes) {
+    if (backgroundRefreshes.has(baseCurrency)) return backgroundRefreshes.get(baseCurrency);
+    const request = fetchAndCacheRates(baseCurrency, supportedCodes)
+      .catch(() => null)
+      .finally(() => backgroundRefreshes.delete(baseCurrency));
+    backgroundRefreshes.set(baseCurrency, request);
+    return request;
+  }
+
+  async function fetchAndCacheRates(baseCurrency, supportedCodes) {
+    const quotes = supportedCodes.filter((currency) => currency !== baseCurrency);
+    const url = `https://api.frankfurter.dev/v2/rates?base=${encodeURIComponent(baseCurrency)}&quotes=${quotes.join(",")}`;
+    const response = await fetchWithRetry(url);
+
+    if (!response.ok) throw new Error(`Could not fetch exchange rates (${response.status}).`);
+    const parsed = parseRatesResponse(await response.json());
+    const rates = sanitizeRates(parsed.rates, supportedCodes);
+    if (!Object.keys(rates).length) {
+      throw new Error("The exchange-rate service returned no usable rates.");
+    }
+
+    const baseCache = {
+      fetchedAt: new Date().toISOString(),
+      rateDate: parsed.date || new Date().toISOString().slice(0, 10),
+      catalogSignature: supportedCodes.join(","),
+      rates: { ...rates, [baseCurrency]: 1 }
+    };
+    await saveBaseRates(baseCurrency, baseCache);
+    return buildSuccess(baseCache, false, false);
   }
 
   async function readCachedBase(baseCurrency) {

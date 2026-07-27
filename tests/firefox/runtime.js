@@ -71,7 +71,7 @@ test("Firefox page access and popup handlers convert and undo a real webpage", {
       popupContext.context,
       "document.querySelector('#rememberSiteHelp').textContent"
     );
-    assert.match(rememberSiteHelp, /Automatically converts this website/);
+    assert.match(rememberSiteHelp, /Converts prices automatically/);
     await evaluatePopup(
       popupScript,
       popupContext.context,

@@ -11,6 +11,8 @@
   const MAX_SHADOW_HOSTS_PER_SCAN = 10000;
   const MAX_PENDING_ROOTS = 100;
   const DOM_WRITE_BATCH_SIZE = 200;
+  const MAX_DISCOVERY_TEXT_NODES = 6000;
+  const MAX_DISCOVERY_PRICE_ELEMENTS = 300;
   const POSSIBLE_PRICE_TEXT_PATTERN = /[0-9０-９]/;
   const QUICK_CURRENCY_MARKER_PATTERN = new RegExp(
     [...new Set(Object.entries(CurrencyCatalog.CURRENCY_META).flatMap(([currency, meta]) =>
@@ -41,15 +43,22 @@
   let activeRatesByBase = {};
   let activeRateMetaByBase = {};
   let currentConversion = null;
+  let conversionGeneration = 0;
   let observer = null;
   let observerHandle = null;
   let observerUsesIdleCallback = false;
+  let discoveryObserver = null;
+  let discoveryHandle = null;
+  let discoveryUsesIdleCallback = false;
+  let discoveryCallback = null;
+  const discoveryRoots = new Set();
   let observedUrl = window.location.href;
   const pendingRoots = new Set();
   const observedShadowRoots = new WeakSet();
 
   function configure(nextSettings) {
-    settings = nextSettings;
+    cancelPendingConversion();
+    settings = Object.freeze({ ...nextSettings });
     activeRatesByBase = {};
     activeRateMetaByBase = {};
   }
@@ -59,19 +68,28 @@
       return Promise.resolve({ ok: false, error: "Extension is turned off." });
     }
 
-    if (currentConversion) return currentConversion;
-    currentConversion = performConversion(options).finally(() => {
+    const generation = conversionGeneration;
+    const runSettings = settings;
+    if (currentConversion?.generation === generation) return currentConversion.promise;
+
+    const task = { generation, promise: null };
+    task.promise = performConversion(options, generation, runSettings).finally(() => {
+      if (currentConversion !== task) return;
       currentConversion = null;
-      if (pendingRoots.size) schedulePendingConversion();
+      if (isCurrentRun(generation, runSettings) && pendingRoots.size) {
+        schedulePendingConversion();
+      }
     });
-    return currentConversion;
+    currentConversion = task;
+    return task.promise;
   }
 
   async function performConversion({
     clearExisting = true,
     observe = true,
     roots = null
-  } = {}) {
+  } = {}, generation, runSettings) {
+    if (!isCurrentRun(generation, runSettings)) return cancelledConversionResult();
     if (clearExisting) removeConversionsOnly();
     const scanRoots = normalizeRoots(roots || [document.body]);
     const textScan = collectTextNodes(scanRoots);
@@ -90,13 +108,23 @@
     const bases = collectSourceCurrencies(textPlans, splitPlans);
 
     if (bases.size === 0) {
-      if (observe) startWatching();
+      if (observe && isCurrentRun(generation, runSettings)) startWatching();
       return buildNoMatchesResult(textPlans, splitPlans);
     }
 
     const rateResults = await Promise.all([...bases].map(ensureRates));
+    if (!isCurrentRun(generation, runSettings)) return cancelledConversionResult();
     const rateError = rateResults.find((result) => !result.ok);
-    const count = await applyPlansInBatches(textPlans, splitPlans);
+    const applied = await applyPlansInBatches(
+      textPlans,
+      splitPlans,
+      generation,
+      runSettings
+    );
+    if (applied.cancelled || !isCurrentRun(generation, runSettings)) {
+      return cancelledConversionResult();
+    }
+    const count = applied.count;
     observer?.takeRecords();
     if (observe) startWatching();
 
@@ -148,10 +176,12 @@
 
   async function convertSelectionText(selectedText, element) {
     if (!settings?.enabled) return { ok: false, error: "Extension is turned off." };
+    const generation = conversionGeneration;
+    const runSettings = settings;
     const match = CurrencyDetector.findMatchesForContext(
       selectedText,
       element,
-      settings,
+      runSettings,
       { selection: true }
     )[0];
 
@@ -165,6 +195,9 @@
     }
 
     const ratesResult = await ensureRates(match.currency);
+    if (!isCurrentRun(generation, runSettings)) {
+      return { ok: false, cancelled: true, error: "Settings changed before the selection was converted." };
+    }
     if (!ratesResult?.ok) return ratesResult;
     const meta = activeRateMetaByBase[match.currency] || {};
     return {
@@ -188,6 +221,142 @@
       index !== otherIndex && other !== root && other.nodeType === Node.ELEMENT_NODE &&
       !root.host && other.contains?.(root)
     ));
+  }
+
+  function detectPagePrices({ roots = null } = {}) {
+    if (!settings?.enabled || !document.body) return { found: false, currencies: [] };
+    const scanRoots = normalizeRoots(roots || [document.body]);
+    const priceElements = new Set();
+
+    for (const root of scanRoots) {
+      if (![Node.ELEMENT_NODE, Node.DOCUMENT_FRAGMENT_NODE].includes(root.nodeType) || isOwnedElement(root)) continue;
+      if (root.matches?.(SPLIT_CANDIDATE_SELECTOR)) priceElements.add(root);
+      for (const element of root.querySelectorAll?.(SPLIT_CANDIDATE_SELECTOR) || []) {
+        priceElements.add(element);
+        if (priceElements.size >= MAX_DISCOVERY_PRICE_ELEMENTS) break;
+      }
+      if (priceElements.size >= MAX_DISCOVERY_PRICE_ELEMENTS) break;
+    }
+
+    const prioritizedPriceElements = [...priceElements];
+    prioritizeViewportElements(prioritizedPriceElements);
+    for (const element of prioritizedPriceElements) {
+      if (
+        element.closest("[hidden], [inert], [aria-hidden='true'], template") ||
+        element.isContentEditable ||
+        !isRendered(element) ||
+        element.closest(`${OWNED_SELECTOR}, ${UI_SELECTOR}`)
+      ) continue;
+      const text = element.textContent?.trim();
+      if (!text || text.length > 120) continue;
+      const matches = CurrencyDetector.findMatchesForContext(text, element, settings);
+      const currencies = usableDiscoveryCurrencies(matches);
+      if (currencies.length) return { found: true, currencies };
+    }
+
+    let inspected = 0;
+    for (const root of scanRoots) {
+      if (root.nodeType === Node.TEXT_NODE) {
+        const currencies = discoveryCurrenciesForTextNode(root);
+        if (currencies.length) return { found: true, currencies };
+        continue;
+      }
+      if (![Node.ELEMENT_NODE, Node.DOCUMENT_FRAGMENT_NODE].includes(root.nodeType) || isOwnedElement(root)) continue;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode() && inspected < MAX_DISCOVERY_TEXT_NODES) {
+        inspected += 1;
+        const currencies = discoveryCurrenciesForTextNode(walker.currentNode);
+        if (currencies.length) return { found: true, currencies };
+      }
+      if (inspected >= MAX_DISCOVERY_TEXT_NODES) break;
+    }
+    return { found: false, currencies: [] };
+  }
+
+  function discoveryCurrenciesForTextNode(node) {
+    if (acceptTextNode(node) !== NodeFilter.FILTER_ACCEPT) return [];
+    return usableDiscoveryCurrencies(CurrencyDetector.findMatchesForContext(
+      node.nodeValue,
+      node.parentElement,
+      settings
+    ));
+  }
+
+  function usableDiscoveryCurrencies(matches) {
+    return [...new Set((matches || [])
+      .map((match) => match.currency)
+      .filter((currency) => currency && currency !== settings.toCurrency))];
+  }
+
+  function prefetchRates(currencies) {
+    const bases = [...new Set(currencies || [])]
+      .filter((currency) => currency && currency !== settings?.toCurrency)
+      .slice(0, 3);
+    if (!bases.length) return Promise.resolve([]);
+    return Promise.allSettled(bases.map(ensureRates));
+  }
+
+  function startDiscovering(onFound) {
+    if (!settings?.enabled || !document.body || typeof MutationObserver === "undefined") return;
+    discoveryCallback = onFound;
+    if (discoveryObserver) return;
+    discoveryObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === "characterData") {
+          queueDiscoveryRoot(mutation.target);
+          continue;
+        }
+        for (const node of mutation.addedNodes) queueDiscoveryRoot(node);
+      }
+      if (discoveryRoots.size) scheduleDiscoveryScan();
+    });
+    discoveryObserver.observe(document.body, { childList: true, characterData: true, subtree: true });
+  }
+
+  function queueDiscoveryRoot(node) {
+    const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    if (!element || element.nodeType !== Node.ELEMENT_NODE || isOwnedElement(element)) return;
+    if (discoveryRoots.size >= MAX_PENDING_ROOTS) {
+      discoveryRoots.clear();
+      discoveryRoots.add(document.body);
+      return;
+    }
+    discoveryRoots.add(element);
+  }
+
+  function scheduleDiscoveryScan() {
+    if (discoveryHandle !== null) return;
+    const run = () => {
+      discoveryHandle = null;
+      if (!discoveryRoots.size || !settings?.enabled) return;
+      const roots = [...discoveryRoots];
+      discoveryRoots.clear();
+      const detection = detectPagePrices({ roots });
+      if (!detection.found) return;
+      const callback = discoveryCallback;
+      stopDiscovering();
+      prefetchRates(detection.currencies).catch(() => {});
+      callback?.(detection);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      discoveryUsesIdleCallback = true;
+      discoveryHandle = window.requestIdleCallback(run, { timeout: 300 });
+    } else {
+      discoveryUsesIdleCallback = false;
+      discoveryHandle = window.setTimeout(run, 75);
+    }
+  }
+
+  function stopDiscovering() {
+    discoveryObserver?.disconnect();
+    discoveryObserver = null;
+    discoveryCallback = null;
+    if (discoveryHandle !== null) {
+      if (discoveryUsesIdleCallback) window.cancelIdleCallback(discoveryHandle);
+      else window.clearTimeout(discoveryHandle);
+    }
+    discoveryHandle = null;
+    discoveryRoots.clear();
   }
 
   function collectOpenRoots(root, output) {
@@ -387,20 +556,41 @@
     return result || { ok: false, error: "Could not load exchange rates." };
   }
 
-  async function applyPlansInBatches(textPlans, splitPlans) {
+  async function applyPlansInBatches(textPlans, splitPlans, generation, runSettings) {
     let count = 0;
     let processed = 0;
     for (const plan of textPlans) {
+      if (!isCurrentRun(generation, runSettings)) return { count, cancelled: true };
       count += applyTextPlan(plan);
       processed += 1;
-      if (processed % DOM_WRITE_BATCH_SIZE === 0) await yieldToMainThread();
+      if (processed % DOM_WRITE_BATCH_SIZE === 0) {
+        await yieldToMainThread();
+        if (!isCurrentRun(generation, runSettings)) return { count, cancelled: true };
+      }
     }
     for (const plan of splitPlans) {
+      if (!isCurrentRun(generation, runSettings)) return { count, cancelled: true };
       count += applySplitPlan(plan);
       processed += 1;
-      if (processed % DOM_WRITE_BATCH_SIZE === 0) await yieldToMainThread();
+      if (processed % DOM_WRITE_BATCH_SIZE === 0) {
+        await yieldToMainThread();
+        if (!isCurrentRun(generation, runSettings)) return { count, cancelled: true };
+      }
     }
-    return count;
+    return { count, cancelled: false };
+  }
+
+  function isCurrentRun(generation, runSettings) {
+    return generation === conversionGeneration && settings === runSettings && runSettings?.enabled;
+  }
+
+  function cancelledConversionResult() {
+    return {
+      ok: false,
+      count: 0,
+      cancelled: true,
+      error: "Conversion was cancelled because settings changed or original prices were restored."
+    };
   }
 
   function yieldToMainThread() {
@@ -597,8 +787,18 @@
   }
 
   function clearConversions() {
+    cancelPendingConversion();
     stopWatching();
     removeConversionsOnly();
+  }
+
+  function cancelPendingConversion() {
+    conversionGeneration += 1;
+    pendingRoots.clear();
+  }
+
+  function hasConversions() {
+    return Boolean(document.querySelector(OWNED_SELECTOR));
   }
 
   global.CurrencyPageConverter = Object.freeze({
@@ -606,6 +806,12 @@
     runSiteConversion,
     convertSelectionText,
     clearConversions,
+    cancelPendingConversion,
+    hasConversions,
+    detectPagePrices,
+    prefetchRates,
+    startDiscovering,
+    stopDiscovering,
     startWatching,
     stopWatching
   });

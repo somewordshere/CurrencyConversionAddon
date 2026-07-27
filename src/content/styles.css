@@ -130,6 +130,9 @@ ccp-conversion .ccp-badge {
 }
 
 .ccp-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   bottom: 16px;
   right: 16px;
   max-width: min(360px, calc(100vw - 32px));
@@ -141,18 +144,51 @@ ccp-conversion .ccp-badge {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
 
-.ccp-toast-action {
+.ccp-toast-message {
+  all: initial;
+  min-width: 0;
+  color: #fff;
+  font: 400 13px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.ccp-toast-action,
+.ccp-toast-dismiss {
   all: unset;
-  margin-left: 10px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.ccp-toast-action {
   color: #bfdbfe;
   font: 700 13px/1.2 system-ui, sans-serif;
-  cursor: pointer;
   text-decoration: underline;
 }
 
-.ccp-toast-action:focus-visible {
+.ccp-toast-dismiss {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 7px;
+  color: #d1d5db;
+  font: 20px/1 system-ui, sans-serif;
+}
+
+.ccp-toast-dismiss:hover {
+  background: #1f2937;
+  color: #fff;
+}
+
+.ccp-toast-action:focus-visible,
+.ccp-toast-dismiss:focus-visible {
   outline: 2px solid #fbbf24;
   outline-offset: 2px;
+}
+
+.ccp-toast-action:disabled {
+  cursor: wait;
+  opacity: 0.75;
 }
 
 .ccp-page-prompt[data-state="success"] {

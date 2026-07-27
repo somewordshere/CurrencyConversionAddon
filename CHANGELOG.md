@@ -2,65 +2,65 @@
 
 All notable changes to Currency Converter Pro are documented here. Dates reflect the release preparation date for each version.
 
-## 1.7.2 - 2026-07-24
+## 1.8.0 - 2026-07-27
 
 ### Added
 
-- Added a fade-and-settle entrance for the webpage conversion suggestion.
-- Added a brief success pulse to the webpage control and a fade-in animation for newly converted values.
-- Added Chromium coverage for the top-right position, entrance animation, success animation, and reduced-motion behavior.
+- Added always-on local price detection for ordinary HTTP and HTTPS webpages.
+- Added price-gated on-page prompts that appear only after a supported price is found.
+- Added lightweight dynamic-page discovery so a prompt appears when a shopping page inserts a price later.
+- Added background rate prefetching as soon as a source currency is detected.
 
 ### Changed
 
-- Moved the webpage conversion suggestion from the bottom-right to the top-right corner.
-- Moved transient conversion toasts to the bottom-right so they do not overlap the webpage suggestion.
-- Kept all new motion disabled when the operating system requests reduced motion.
+- Enabled the converter by default for new installations while preserving an existing user's explicit on/off setting.
+- Returned to declarative webpage loading because automatic detection on every ordinary website is a core product requirement.
+- Changed remembered websites from permission grants into automatic-conversion preferences; page detection remains available on other websites.
+- Removed the obsolete 1.7.3 site-access reset notice and its popup UI.
+- Made settings and popup startup use the cached or built-in currency catalog immediately while the provider catalog refreshes in the background.
+- Made recent cached rates available immediately while fresh rates load in the background, retaining the seven-day hard limit.
 
-### Packaging
+### Privacy and permissions
 
-- Prepared separate 1.7.2 Chrome and Firefox builds containing runtime files only.
+- Disclosed required ordinary HTTP and HTTPS webpage access for the always-on local detector.
+- Kept webpage contents, price values, URLs, and browsing history on the user's device; only ISO currency codes are sent for rate lookup.
+- Updated the privacy policy, permission justifications, Store listing, and Limited Use statement for the always-on model.
 
-## 1.7.1 - 2026-07-24
+### Testing
+
+- Added browser coverage for automatic prompting on initially rendered and dynamically inserted prices.
+- Retained conversion, undo, race-condition, accessibility, bounded-scan, and cross-browser regression coverage.
+
+## 1.7.3 - 2026-07-27
 
 ### Added
 
-- Added per-website source-currency preferences for ordinary HTTP and HTTPS websites.
-- Added regression coverage proving that a saved source is restored on the same website while a new website starts in `AUTO`.
+- Added per-site source-currency retention for websites explicitly approved for automatic conversion.
+- Added regression coverage for approved-site source retention, complete site-access removal, and the 1.7.2 broad-access migration.
+- Added a one-time **Site access reset for privacy** notice for upgrades from versions 1.7.0 through 1.7.2, backed by transient boolean pending and notice flags that contain no website details.
 
 ### Changed
 
-- Made the one-click conversion suggestion available on every ordinary website whenever page conversion is enabled.
-- Removed the prompt-disable option from Page options so an older saved preference cannot silently suppress the webpage suggestion.
-- Reset the legacy global source-currency value to `AUTO`; explicit source choices are now stored only for their website origin.
+- Restored one-time page conversion through `activeTab` and `scripting`, with no required access to ordinary websites and no declarative all-sites content script.
+- Changed automatic conversion to request optional access only for the exact website origin selected in **Page options**.
+- Simplified the popup around the current site, currency pair, and one primary page-conversion action, and moved the global **Enable converter** switch into **Page options**.
+- Made **Turn on and convert page** enable the converter and convert the current page in one action before reverting to **Convert page prices** for later runs.
+- Changed **Convert custom amount** into a closed disclosure and now require an explicit source selection when `AUTO` has not identified a page currency.
+- Made **Restore original prices** appear only when conversions exist and limited **Remove site access** to recovery from an unmatched permission or incomplete cleanup state.
+- Clarified remembered websites as **automatic conversion paused** when the global converter is off without revoking their saved exact-origin access.
+- Limited the on-page conversion prompt to pages where the user has already invoked or approved the extension.
+- Preserved active conversions when prompt-only settings change and deliberately reconvert them when the currency pair or display mode changes.
+- Made the page prompt, selection control, and conversion result keyboard-dismissible with focus restoration, persistent Undo, and reliable live-status announcements.
+- Serialized popup setting saves and per-origin site-state mutations so concurrent actions cannot overwrite newer settings or strand another site's registration.
+- Invalidated in-flight conversion work when settings change, the converter is disabled, or original prices are restored.
 
-### Packaging
+### Privacy
 
-- Prepared separate 1.7.1 Chrome and Firefox builds containing runtime files only.
-
-## 1.7.0 - 2026-07-23
-
-### Added
-
-- Added a compact, dismissible one-click conversion control directly to ordinary HTTP and HTTPS webpages.
-- Added clear in-page progress, success, error, keyboard-focus, and reduced-motion states.
-- Added Chromium browser coverage proving that the page control appears and converts prices without opening the toolbar popup first.
-- Added an opt-in, resumable Chrome compatibility sweep for 100 shopping websites across 20 currencies.
-
-### Changed
-
-- Enabled page conversion by default for new installations while preserving the saved choice of existing users.
-- Changed remembered websites from permission grants into automatic-conversion preferences.
-- Declared website access at installation so the in-page control can be available before the toolbar popup is opened.
-- Updated privacy and permission documentation to explain the broader website access and local-only page processing.
-
-### Fixed
-
-- Restored the one-click page control automatically when a dynamic storefront replaces the document body after extension injection.
-- Shortened the manifest description to comply with the 132-character browser-store limit.
-
-### Packaging
-
-- Prepared separate 1.7.0 Chrome and Firefox builds containing runtime files only.
+- Upgrades from versions 1.7.0 through 1.7.2 remove the legacy broad HTTP and HTTPS website grant before remembered-site registrations are reconciled.
+- Those upgrades explicitly clear legacy automatic-site choices and their saved source currencies, then show the one-time reset notice; dismissing it deletes `siteAccessResetNotice` without storing website details.
+- A transient `siteAccessResetPending` boolean retries an interrupted legacy cleanup at browser startup and is removed before the verified-reset notice is shown.
+- Removing site access now unregisters automatic conversion, revokes the exact-origin permission, and deletes the remembered origin and its source-currency override.
+- Returning an approved site to `AUTO` now persists automatic detection for that site instead of falling back to an unrelated global manual source.
 
 ## 1.6.2 - 2026-07-21
 

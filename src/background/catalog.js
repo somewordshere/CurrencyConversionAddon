@@ -14,6 +14,16 @@
     return pendingRequest;
   }
 
+  async function getCachedCurrencies() {
+    const stored = await ExtensionAPI.storage.local.get(CACHE_KEY);
+    const cache = stored[CACHE_KEY];
+    if (isUsableCache(cache)) {
+      return buildResult(cache.currencies, true, !isFresh(cache));
+    }
+    return buildResult(buildFallbackCurrencies(), true, true,
+      "Using the built-in currency list while the provider catalog refreshes.");
+  }
+
   async function loadCurrencies(forceRefresh) {
     const stored = await ExtensionAPI.storage.local.get(CACHE_KEY);
     const cache = stored[CACHE_KEY];
@@ -98,6 +108,7 @@
 
   global.CurrencyCatalogService = Object.freeze({
     getCurrencies,
+    getCachedCurrencies,
     sanitizeCurrencyResponse,
     buildFallbackCurrencies,
     isFresh,

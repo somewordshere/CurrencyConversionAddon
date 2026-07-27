@@ -3,6 +3,7 @@ const path = require("node:path");
 const { test, expect } = require("./fixtures");
 
 const SHOP_URL = "https://api.frankfurter.dev/test-shop";
+const UNAPPROVED_SHOP_URL = "https://unapproved-shop.example.test/";
 const SHOP_HTML = fs.readFileSync(path.resolve(__dirname, "../fixtures/shop.html"), "utf8");
 const SPLIT_PRICE_URL = "https://api.frankfurter.dev/digitec-split-price";
 const SPLIT_PRICE_HTML = fs.readFileSync(
@@ -15,22 +16,25 @@ const SPLIT_FRACTION_HTML = fs.readFileSync(
   "utf8"
 );
 
-async function seedExtension(extensionWorker, { showPagePrompt = false } = {}) {
-  await extensionWorker.evaluate(async ({ showPagePrompt }) => {
+async function seedExtension(extensionWorker, options = {}) {
+  const settings = {
+    enabled: true,
+    fromCurrency: "AUTO",
+    toCurrency: "EUR",
+    displayMode: "beside",
+    showPagePrompt: false,
+    ...(options.settings || {})
+  };
+  const localOverrides = options.local || {};
+
+  await extensionWorker.evaluate(async ({ settings, localOverrides }) => {
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const stored = await chrome.storage.sync.get("enabled");
       if (typeof stored.enabled === "boolean") break;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    await chrome.storage.sync.set({
-      enabled: true,
-      fromCurrency: "AUTO",
-      toCurrency: "EUR",
-      displayMode: "beside",
-      showPagePrompt
-    });
+    await chrome.storage.sync.set(settings);
     await chrome.storage.local.set({
-      siteSourceCurrencies: {},
       providerCurrencyCatalog: {
         version: 1,
         fetchedAt: new Date().toISOString(),
@@ -49,7 +53,7 @@ async function seedExtension(extensionWorker, { showPagePrompt = false } = {}) {
             fetchedAt: new Date().toISOString(),
             rateDate: "2026-07-10",
             catalogSignature: "AFN,CHF,EUR,PLN,USD",
-            rates: { USD: 1, EUR: 0.9 }
+            rates: { USD: 1, EUR: 0.9, CHF: 0.8 }
           },
           CHF: {
             fetchedAt: new Date().toISOString(),
@@ -64,9 +68,10 @@ async function seedExtension(extensionWorker, { showPagePrompt = false } = {}) {
             rates: { PLN: 1, EUR: 0.235 }
           }
         }
-      }
+      },
+      ...localOverrides
     });
-  }, { showPagePrompt });
+  }, { settings, localOverrides });
 }
 
 async function runPageCommand(extensionWorker, type, url = SHOP_URL) {
@@ -79,86 +84,110 @@ async function runPageCommand(extensionWorker, type, url = SHOP_URL) {
   }, { url, type });
 }
 
-test("shows a one-click conversion control without opening the toolbar popup", async ({
+async function openPopupForPage(context, extensionId, activePage) {
+  // chrome.action.openPopup() creates a real POPUP runtime context in headless Chromium,
+  // but Playwright does not expose that context as a Page. Loading the same extension
+  // document in a background tab while the shop stays active exercises the popup code
+  // against the real target tab and keeps its DOM inspectable.
+  const popup = await context.newPage();
+  await activePage.bringToFront();
+  await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+  await expect(popup.getByRole("heading", { name: "Currency Converter Pro" })).toBeVisible();
+  return popup;
+}
+
+async function runContentUiScenario(extensionWorker, scenario, url = SHOP_URL) {
+  return extensionWorker.evaluate(async ({ scenario, url }) => {
+    const tabs = await chrome.tabs.query({});
+    const tab = tabs.find((candidate) => candidate.url === url);
+    if (!tab?.id) throw new Error(`Could not find test page tab: ${url}`);
+    const [execution] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "ISOLATED",
+      args: [scenario],
+      func: async (scenarioName) => {
+        const ui = globalThis.CurrencyPageUi;
+        if (!ui) return { ok: false, error: "CurrencyPageUi is not loaded." };
+        const settings = {
+          enabled: true,
+          fromCurrency: "USD",
+          toCurrency: "EUR",
+          displayMode: "beside",
+          showPagePrompt: false
+        };
+
+        if (scenarioName === "selection-success") {
+          ui.configure({
+            settings,
+            runConversion: async () => ({ ok: true }),
+            clearConversion: async () => ({ ok: true }),
+            convertSelection: async () => {
+              await new Promise((resolve) => setTimeout(resolve, 200));
+              return { ok: true, sourceCurrency: "USD", converted: "EUR 90.00" };
+            }
+          });
+        } else if (scenarioName === "rejected-actions") {
+          ui.configure({
+            settings,
+            runConversion: async () => {
+              throw new Error("Conversion callback rejected");
+            },
+            clearConversion: async () => {
+              throw new Error("Restore callback rejected");
+            },
+            convertSelection: async () => {
+              throw new Error("Selection callback rejected");
+            }
+          });
+          ui.showPageConvertPrompt();
+        } else if (scenarioName === "undo-rejection") {
+          ui.configure({
+            settings,
+            runConversion: async () => ({
+              ok: true,
+              count: 1,
+              detectedCurrency: "USD"
+            }),
+            clearConversion: async () => {
+              throw new Error("Restore callback rejected");
+            },
+            convertSelection: async () => {
+              throw new Error("Selection callback rejected");
+            }
+          });
+        } else if (scenarioName === "toast-rejection") {
+          ui.showToast("Converted 1 price.", {
+            actionLabel: "Undo",
+            onAction: async () => {
+              throw new Error("Toast callback rejected");
+            }
+          });
+        } else {
+          return { ok: false, error: `Unknown scenario: ${scenarioName}` };
+        }
+        return { ok: true };
+      }
+    });
+    return execution?.result;
+  }, { scenario, url });
+}
+
+test("automatically detects prices and offers conversion on an ordinary website", async ({
   context,
   extensionWorker
 }) => {
-  await seedExtension(extensionWorker);
-
+  await seedExtension(extensionWorker, { settings: { fromCurrency: "USD", showPagePrompt: true } });
   const shop = await context.newPage();
-  await shop.route(SHOP_URL, (route) => route.fulfill({
+  await shop.route(UNAPPROVED_SHOP_URL, (route) => route.fulfill({
     status: 200,
     contentType: "text/html; charset=utf-8",
     body: SHOP_HTML
   }));
-  await shop.goto(SHOP_URL);
+  await shop.goto(UNAPPROVED_SHOP_URL);
 
-  const control = shop.locator(".ccp-page-prompt");
-  await expect(control.getByText("Currency Converter Pro", { exact: true })).toBeVisible();
-  await expect(control).toContainText("Convert prices on this page to EUR.");
-  await expect(control).toHaveCSS("top", "16px");
-  await expect(control).toHaveCSS("right", "16px");
-  await expect(control).toHaveCSS("animation-name", "ccp-page-prompt-enter");
-  await control.getByRole("button", { name: "Convert page", exact: true }).click();
-
-  await expect(shop.locator("#initial ccp-conversion[data-ccp-owned='true']")).toHaveCount(1);
-  await expect(shop.locator("#initial")).toContainText("90,00");
-  await expect(control).toContainText("Converted 1 price");
-  await expect(control).toHaveAttribute("data-state", "success");
-  await expect(control).toHaveCSS("animation-name", "ccp-page-prompt-success");
-  await expect(shop.locator("#initial .ccp-badge")).toHaveCSS(
-    "animation-name",
-    "ccp-converted-value-enter"
-  );
-});
-
-test("disables prompt and converted-value animations when reduced motion is requested", async ({
-  context,
-  extensionWorker
-}) => {
-  await seedExtension(extensionWorker);
-
-  const shop = await context.newPage();
-  await shop.emulateMedia({ reducedMotion: "reduce" });
-  await shop.route(SHOP_URL, (route) => route.fulfill({
-    status: 200,
-    contentType: "text/html; charset=utf-8",
-    body: SHOP_HTML
-  }));
-  await shop.goto(SHOP_URL);
-
-  const control = shop.locator(".ccp-page-prompt");
-  await expect(control).toBeVisible();
-  await expect(control).toHaveCSS("animation-name", "none");
-  await control.getByRole("button", { name: "Convert page", exact: true }).click();
-  await expect(shop.locator("#initial .ccp-badge")).toHaveCSS("animation-name", "none");
-  await expect(control).toHaveCSS("animation-name", "none");
-});
-
-test("restores the one-click control when a storefront replaces the page body", async ({
-  context,
-  extensionWorker
-}) => {
-  await seedExtension(extensionWorker);
-
-  const shop = await context.newPage();
-  await shop.route(SHOP_URL, (route) => route.fulfill({
-    status: 200,
-    contentType: "text/html; charset=utf-8",
-    body: SHOP_HTML
-  }));
-  await shop.goto(SHOP_URL);
-
-  const control = shop.locator(".ccp-page-prompt");
-  await expect(control).toBeVisible();
-  await shop.evaluate(() => {
-    const replacement = document.createElement("body");
-    replacement.innerHTML = "<main><p>$25.00</p></main>";
-    document.documentElement.replaceChild(replacement, document.body);
-  });
-
-  await expect(control).toBeVisible();
-  await expect(control).toContainText("Convert prices on this page to EUR.");
+  await expect(shop.locator(".ccp-page-prompt")).toBeVisible();
+  await expect(shop.locator(".ccp-page-prompt")).toContainText("Convert visible prices");
+  await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(0);
 });
 
 test("converts marked prices split across neutral, obfuscated elements", async ({
@@ -210,6 +239,709 @@ test("converts marked prices split across neutral, obfuscated elements", async (
   await expect(allegro.locator("#allegro-title ccp-conversion")).toHaveCount(0);
 });
 
+test("off-state popup turns on and converts the active page with one click", async ({
+  context,
+  extensionWorker,
+  extensionId
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { enabled: false, fromCurrency: "USD" }
+  });
+
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+  const ready = await runPageCommand(extensionWorker, "CONTENT_READY");
+  expect(ready.ok).toBe(true);
+  await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(0);
+
+  const popup = await openPopupForPage(context, extensionId, shop);
+  const convertButton = popup.getByRole("button", { name: "Turn on and convert page" });
+  await expect(convertButton).toBeVisible();
+  await expect(popup.locator("#pageOptions")).not.toHaveAttribute("open", "");
+
+  await convertButton.click();
+
+  await expect.poll(() => extensionWorker.evaluate(async () =>
+    (await chrome.storage.sync.get("enabled")).enabled
+  )).toBe(true);
+  await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(1);
+  await expect(shop.locator("#initial")).toContainText("90,00");
+  await expect(popup.locator("#enabled")).toBeChecked();
+  await expect(popup.getByRole("button", { name: "Convert page prices" })).toBeVisible();
+  await expect(popup.locator("#status")).toContainText("Converted 1 price");
+  await expect(popup.locator("#clearPage")).toBeVisible();
+
+  await popup.locator("#clearPage").click();
+  await expect(popup.locator("#clearPage")).toBeHidden();
+  await expect(popup.locator("#convertSite")).toBeFocused();
+  await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(0);
+});
+
+test("offers conversion when a dynamic page adds a price later", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "USD", showPagePrompt: true }
+  });
+
+  const shop = await context.newPage();
+  await shop.route(UNAPPROVED_SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: "<!doctype html><main><h1>Dynamic shop</h1><div id='price-slot'></div></main>"
+  }));
+  await shop.goto(UNAPPROVED_SHOP_URL);
+  await expect(shop.locator(".ccp-page-prompt")).toHaveCount(0);
+
+  await shop.locator("#price-slot").evaluate((element) => {
+    element.className = "product-price";
+    element.textContent = "$125.00";
+  });
+  await expect(shop.locator(".ccp-page-prompt")).toBeVisible();
+});
+
+test("page prompt and keyboard-selection control restore focus on Escape", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "USD", showPagePrompt: true }
+  });
+
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+  const initialPrompt = shop.locator(".ccp-page-prompt");
+  await expect(initialPrompt).toBeVisible();
+  await initialPrompt.getByRole("button", { name: "Dismiss currency converter" }).click();
+  await shop.evaluate(() => {
+    const focusAnchor = document.createElement("button");
+    focusAnchor.id = "focus-anchor";
+    focusAnchor.textContent = "Focus anchor";
+    document.body.prepend(focusAnchor);
+    focusAnchor.focus();
+  });
+
+  await runPageCommand(extensionWorker, "SHOW_CONVERT_PROMPT");
+  const prompt = shop.locator(".ccp-page-prompt");
+  await expect(prompt).toBeVisible();
+  await prompt.getByRole("button", { name: "Convert prices" }).focus();
+  await shop.keyboard.press("Escape");
+  await expect(prompt).toHaveCount(0);
+  await expect(shop.locator("#focus-anchor")).toBeFocused();
+
+  expect(await runContentUiScenario(extensionWorker, "selection-success")).toEqual({ ok: true });
+  await shop.evaluate(() => {
+    const range = document.createRange();
+    range.selectNodeContents(document.getElementById("initial"));
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+
+  const selectionControl = shop.locator(".ccp-selection-popup");
+  await shop.keyboard.down("Shift");
+  await shop.keyboard.press("ArrowRight");
+  await expect(selectionControl).toHaveCount(0);
+  await shop.keyboard.up("Shift");
+  await expect(selectionControl).toBeVisible();
+  await expect(selectionControl).toBeFocused();
+  await expect(selectionControl).toHaveAttribute(
+    "aria-label",
+    "Convert selected USD price to EUR"
+  );
+  await expect(selectionControl).toHaveAttribute("aria-live", "polite");
+  await expect(selectionControl).toHaveAttribute("aria-atomic", "true");
+
+  await shop.keyboard.press("Shift");
+  await expect(selectionControl).toBeVisible();
+  await expect(selectionControl).toBeFocused();
+
+  await selectionControl.press("Enter");
+  await expect(selectionControl).toHaveAttribute("aria-busy", "true");
+  await expect(selectionControl).toHaveAttribute(
+    "aria-label",
+    "Converting selected USD price to EUR"
+  );
+  await expect(selectionControl).toHaveAttribute(
+    "aria-label",
+    "Converted selected USD price to EUR 90.00"
+  );
+  await expect(selectionControl).toHaveAttribute("data-state", "success");
+  await expect(selectionControl).not.toHaveAttribute("aria-busy", "true");
+  await shop.keyboard.press("Escape");
+  await expect(selectionControl).toHaveCount(0);
+  await expect(shop.locator("#focus-anchor")).toBeFocused();
+});
+
+test("transient page actions recover and announce rejected callbacks", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "USD", showPagePrompt: false }
+  });
+
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+  expect((await runPageCommand(extensionWorker, "SHOW_CONVERT_PROMPT")).ok).toBe(true);
+  await shop.evaluate(() => {
+    const focusAnchor = document.createElement("button");
+    focusAnchor.id = "rejection-focus-anchor";
+    focusAnchor.textContent = "Rejection focus anchor";
+    document.body.prepend(focusAnchor);
+    focusAnchor.focus();
+  });
+  expect(await runContentUiScenario(extensionWorker, "rejected-actions")).toEqual({ ok: true });
+
+  const prompt = shop.locator(".ccp-page-prompt");
+  const promptMessage = prompt.locator(".ccp-page-prompt-message");
+  await prompt.getByRole("button", { name: "Convert prices" }).click();
+  await expect(prompt.getByRole("button", { name: "Try again" })).toBeEnabled();
+  await expect(promptMessage).toHaveText(
+    "Prices could not be converted. Conversion callback rejected"
+  );
+  await expect(prompt).toHaveAttribute("data-state", "error");
+
+  expect(await runContentUiScenario(extensionWorker, "undo-rejection")).toEqual({ ok: true });
+  await prompt.getByRole("button", { name: "Try again" }).click();
+  await expect(prompt.getByRole("button", { name: "Undo" })).toBeEnabled();
+  await prompt.getByRole("button", { name: "Undo" }).click();
+  await expect(prompt.getByRole("button", { name: "Try undo again" })).toBeEnabled();
+  await expect(promptMessage).toHaveText(
+    "Original prices could not be restored. Restore callback rejected"
+  );
+  await expect(prompt).toHaveAttribute("data-state", "error");
+  await prompt.getByRole("button", { name: "Dismiss currency converter" }).click();
+  await expect(shop.locator("#rejection-focus-anchor")).toBeFocused();
+
+  await shop.evaluate(() => {
+    const range = document.createRange();
+    range.selectNodeContents(document.getElementById("initial"));
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+  await shop.keyboard.press("Shift");
+  const selectionControl = shop.locator(".ccp-selection-popup");
+  await expect(selectionControl).toHaveAttribute(
+    "aria-label",
+    "Convert selected USD price to EUR"
+  );
+  await selectionControl.press("Enter");
+  await expect(selectionControl).toBeEnabled();
+  await expect(selectionControl).toHaveAttribute("data-state", "error");
+  await expect(selectionControl).toHaveAttribute(
+    "aria-label",
+    "Selection conversion failed: Selection could not be converted. Selection callback rejected"
+  );
+  await expect(selectionControl).not.toHaveAttribute("aria-busy", "true");
+  await shop.keyboard.press("Escape");
+  await expect(shop.locator("#rejection-focus-anchor")).toBeFocused();
+
+  expect(await runContentUiScenario(extensionWorker, "toast-rejection")).toEqual({ ok: true });
+  const toast = shop.locator(".ccp-toast");
+  const toastAction = toast.getByRole("button", { name: "Undo" });
+  await toastAction.click();
+  await expect(toastAction).toBeEnabled();
+  await expect(toast).toHaveAttribute("data-state", "error");
+  await expect(toast.locator(".ccp-toast-message")).toHaveText(
+    "Undo failed. Toast callback rejected"
+  );
+  await expect(toast.locator(".ccp-toast-message")).toHaveAttribute("aria-live", "polite");
+  await toast.getByRole("button", { name: "Dismiss conversion result" }).click();
+  await expect(shop.locator("#rejection-focus-anchor")).toBeFocused();
+});
+
+test("restoring prices invalidates in-flight and queued conversions", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "USD", showPagePrompt: false }
+  });
+
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+  await runPageCommand(extensionWorker, "CONTENT_READY");
+
+  await extensionWorker.evaluate(() => {
+    globalThis.__ccpOriginalRateService = globalThis.CurrencyRateService;
+    globalThis.__ccpDelayedRate = new Promise((resolve) => {
+      globalThis.__ccpReleaseDelayedRate = () => resolve({
+        ok: true,
+        rates: { USD: 1, EUR: 0.9 },
+        date: "2026-07-10",
+        provider: "Delayed test rate"
+      });
+    });
+    globalThis.__ccpDelayedRateRequested = false;
+    globalThis.CurrencyRateService = Object.freeze({
+      ...globalThis.CurrencyRateService,
+      getRates: async () => {
+        globalThis.__ccpDelayedRateRequested = true;
+        return globalThis.__ccpDelayedRate;
+      }
+    });
+  });
+
+  try {
+    await extensionWorker.evaluate(async (url) => {
+      const tabs = await chrome.tabs.query({});
+      const tab = tabs.find((candidate) => candidate.url === url);
+      if (!tab?.id) throw new Error(`Could not find test page tab: ${url}`);
+      globalThis.__ccpInflightConversion = chrome.tabs.sendMessage(tab.id, {
+        type: "RUN_SITE_CONVERSION"
+      });
+    }, SHOP_URL);
+
+    await expect.poll(() => extensionWorker.evaluate(
+      () => globalThis.__ccpDelayedRateRequested
+    )).toBe(true);
+
+    await extensionWorker.evaluate(async (url) => {
+      const tabs = await chrome.tabs.query({});
+      const tab = tabs.find((candidate) => candidate.url === url);
+      if (!tab?.id) throw new Error(`Could not find test page tab: ${url}`);
+      globalThis.__ccpQueuedConversion = chrome.tabs.sendMessage(tab.id, {
+        type: "RUN_SITE_CONVERSION"
+      });
+    }, SHOP_URL);
+
+    const cleared = await runPageCommand(extensionWorker, "CLEAR_SITE_CONVERSION");
+    expect(cleared.ok).toBe(true);
+    await extensionWorker.evaluate(() => globalThis.__ccpReleaseDelayedRate());
+    const [conversion, queuedConversion] = await extensionWorker.evaluate(
+      () => Promise.all([
+        globalThis.__ccpInflightConversion,
+        globalThis.__ccpQueuedConversion
+      ])
+    );
+    expect(conversion.cancelled).toBe(true);
+    expect(queuedConversion.cancelled).toBe(true);
+    await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(0);
+    await expect(shop.locator("#initial")).toHaveText("Price: $100.00");
+  } finally {
+    await extensionWorker.evaluate(() => {
+      globalThis.__ccpReleaseDelayedRate?.();
+      globalThis.CurrencyRateService = globalThis.__ccpOriginalRateService;
+      delete globalThis.__ccpOriginalRateService;
+      delete globalThis.__ccpDelayedRate;
+      delete globalThis.__ccpReleaseDelayedRate;
+      delete globalThis.__ccpDelayedRateRequested;
+      delete globalThis.__ccpInflightConversion;
+      delete globalThis.__ccpQueuedConversion;
+    });
+  }
+});
+
+test("Restore suppresses stale settings-reload page actions", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "USD", showPagePrompt: false }
+  });
+
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+  expect((await runPageCommand(extensionWorker, "SHOW_CONVERT_PROMPT")).ok).toBe(true);
+  await expect(shop.locator(".ccp-page-prompt")).toHaveCount(0);
+
+  await extensionWorker.evaluate(() => {
+    globalThis.__ccpOriginalCatalogService = globalThis.CurrencyCatalogService;
+    globalThis.__ccpDelayedCatalogRequested = false;
+    globalThis.__ccpDelayedCatalog = new Promise((resolve) => {
+      globalThis.__ccpReleaseDelayedCatalog = resolve;
+    });
+    globalThis.CurrencyCatalogService = Object.freeze({
+      ...globalThis.CurrencyCatalogService,
+      getCachedCurrencies: async () => {
+        globalThis.__ccpDelayedCatalogRequested = true;
+        await globalThis.__ccpDelayedCatalog;
+        return globalThis.__ccpOriginalCatalogService.getCachedCurrencies();
+      },
+      getCurrencies: async () => {
+        globalThis.__ccpDelayedCatalogRequested = true;
+        await globalThis.__ccpDelayedCatalog;
+        return globalThis.__ccpOriginalCatalogService.getCurrencies();
+      }
+    });
+  });
+
+  try {
+    await extensionWorker.evaluate(() => chrome.storage.sync.set({
+      displayMode: "replace",
+      showPagePrompt: true
+    }));
+    await expect.poll(() => extensionWorker.evaluate(
+      () => globalThis.__ccpDelayedCatalogRequested
+    )).toBe(true);
+
+    const cleared = await extensionWorker.evaluate(async (url) => {
+      const tabs = await chrome.tabs.query({});
+      const tab = tabs.find((candidate) => candidate.url === url);
+      if (!tab?.id) throw new Error(`Could not find test page tab: ${url}`);
+      return chrome.tabs.sendMessage(tab.id, {
+        type: "CLEAR_SITE_CONVERSION",
+        suppressPrompt: true
+      });
+    }, SHOP_URL);
+    expect(cleared.ok).toBe(true);
+
+    await extensionWorker.evaluate(() => globalThis.__ccpReleaseDelayedCatalog());
+    const selectionResult = await runPageCommand(extensionWorker, "CONVERT_SELECTION");
+    expect(selectionResult.ok).toBe(false);
+    await expect(shop.locator(".ccp-page-prompt")).toHaveCount(0);
+    await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(0);
+  } finally {
+    await extensionWorker.evaluate(() => {
+      globalThis.__ccpReleaseDelayedCatalog?.();
+      globalThis.CurrencyCatalogService = globalThis.__ccpOriginalCatalogService;
+      delete globalThis.__ccpOriginalCatalogService;
+      delete globalThis.__ccpDelayedCatalogRequested;
+      delete globalThis.__ccpDelayedCatalog;
+      delete globalThis.__ccpReleaseDelayedCatalog;
+    });
+  }
+});
+
+test("coalesced settings reload reconverts existing prices to the final pair", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "USD", showPagePrompt: false }
+  });
+
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+  expect((await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION")).ok).toBe(true);
+  const conversion = shop.locator("#initial ccp-conversion");
+  await expect(conversion).toHaveAttribute("data-display-mode", "beside");
+  await expect(conversion.locator(".ccp-badge")).toHaveAttribute("title", /to EUR/);
+
+  await extensionWorker.evaluate(() => {
+    globalThis.__ccpOriginalCatalogService = globalThis.CurrencyCatalogService;
+    globalThis.__ccpDelayedCatalogRequested = false;
+    globalThis.__ccpDelayedCatalog = new Promise((resolve) => {
+      globalThis.__ccpReleaseDelayedCatalog = resolve;
+    });
+    globalThis.CurrencyCatalogService = Object.freeze({
+      ...globalThis.CurrencyCatalogService,
+      getCachedCurrencies: async () => {
+        globalThis.__ccpDelayedCatalogRequested = true;
+        await globalThis.__ccpDelayedCatalog;
+        return globalThis.__ccpOriginalCatalogService.getCachedCurrencies();
+      },
+      getCurrencies: async () => {
+        globalThis.__ccpDelayedCatalogRequested = true;
+        await globalThis.__ccpDelayedCatalog;
+        return globalThis.__ccpOriginalCatalogService.getCurrencies();
+      }
+    });
+  });
+
+  try {
+    await extensionWorker.evaluate(() => chrome.storage.sync.set({ displayMode: "replace" }));
+    await expect.poll(() => extensionWorker.evaluate(
+      () => globalThis.__ccpDelayedCatalogRequested
+    )).toBe(true);
+    await extensionWorker.evaluate(() => chrome.storage.sync.set({ toCurrency: "CHF" }));
+    await extensionWorker.evaluate(() => globalThis.__ccpReleaseDelayedCatalog());
+
+    const selectionResult = await runPageCommand(extensionWorker, "CONVERT_SELECTION");
+    expect(selectionResult.ok).toBe(false);
+    await expect(conversion).toHaveAttribute("data-display-mode", "replace");
+    await expect(conversion.locator(".ccp-badge")).toHaveAttribute("title", /to CHF/);
+  } finally {
+    await extensionWorker.evaluate(() => {
+      globalThis.__ccpReleaseDelayedCatalog?.();
+      globalThis.CurrencyCatalogService = globalThis.__ccpOriginalCatalogService;
+      delete globalThis.__ccpOriginalCatalogService;
+      delete globalThis.__ccpDelayedCatalogRequested;
+      delete globalThis.__ccpDelayedCatalog;
+      delete globalThis.__ccpReleaseDelayedCatalog;
+    });
+  }
+});
+
+test("failed reloads and removed site preferences stop stale page conversion", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "USD", showPagePrompt: false }
+  });
+
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+  expect((await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION")).ok).toBe(true);
+  await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(1);
+
+  await extensionWorker.evaluate(() => {
+    globalThis.__ccpOriginalCatalogService = globalThis.CurrencyCatalogService;
+    globalThis.__ccpFailedCatalogRequested = false;
+    globalThis.CurrencyCatalogService = Object.freeze({
+      ...globalThis.CurrencyCatalogService,
+      getCachedCurrencies: async () => {
+        globalThis.__ccpFailedCatalogRequested = true;
+        throw new Error("Forced settings reload failure");
+      },
+      getCurrencies: async () => {
+        globalThis.__ccpFailedCatalogRequested = true;
+        throw new Error("Forced settings reload failure");
+      }
+    });
+  });
+
+  try {
+    await extensionWorker.evaluate(() => chrome.storage.sync.set({ toCurrency: "CHF" }));
+    await expect.poll(() => extensionWorker.evaluate(
+      () => globalThis.__ccpFailedCatalogRequested
+    )).toBe(true);
+    const failedSelection = await runPageCommand(extensionWorker, "CONVERT_SELECTION");
+    expect(failedSelection.ok).toBe(false);
+    expect(failedSelection.error).toBe("Extension is turned off.");
+    await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(0);
+
+    await shop.evaluate(() => {
+      const price = document.createElement("p");
+      price.id = "after-failed-reload";
+      price.textContent = "After failed reload: $30.00";
+      document.body.appendChild(price);
+    });
+    await shop.waitForTimeout(250);
+    await expect(shop.locator("#after-failed-reload ccp-conversion")).toHaveCount(0);
+
+    await extensionWorker.evaluate(() => {
+      globalThis.CurrencyCatalogService = globalThis.__ccpOriginalCatalogService;
+    });
+    const reconverted = await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION");
+    expect(reconverted.ok).toBe(true);
+    await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(2);
+
+    const origin = new URL(SHOP_URL).origin;
+    await extensionWorker.evaluate(
+      ({ origin }) => chrome.storage.local.set({
+        autoConvertSites: { [origin]: true },
+        siteSourceCurrencies: { [origin]: "USD" }
+      }),
+      { origin }
+    );
+    await shop.waitForTimeout(100);
+    await runPageCommand(extensionWorker, "CONVERT_SELECTION");
+    await extensionWorker.evaluate(() => chrome.storage.local.set({
+      autoConvertSites: {},
+      siteSourceCurrencies: {}
+    }));
+    await shop.waitForTimeout(100);
+    await runPageCommand(extensionWorker, "CONVERT_SELECTION");
+    await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(0);
+
+    await shop.evaluate(() => {
+      const price = document.createElement("p");
+      price.id = "after-forget";
+      price.textContent = "After forget: $45.00";
+      document.body.appendChild(price);
+    });
+    await shop.waitForTimeout(250);
+    await expect(shop.locator("#after-forget ccp-conversion")).toHaveCount(0);
+  } finally {
+    await extensionWorker.evaluate(() => {
+      globalThis.CurrencyCatalogService = globalThis.__ccpOriginalCatalogService;
+      delete globalThis.__ccpOriginalCatalogService;
+      delete globalThis.__ccpFailedCatalogRequested;
+    });
+  }
+});
+
+test("rapid popup changes remain consistent across close and validation races", async ({
+  context,
+  extensionWorker,
+  extensionId
+}) => {
+  await seedExtension(extensionWorker);
+
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+
+  await extensionWorker.evaluate(() => {
+    globalThis.__ccpOriginalRateService = globalThis.CurrencyRateService;
+    globalThis.__ccpDelayedRateRequested = false;
+    globalThis.__ccpDelayedPopupRate = new Promise((resolve) => {
+      globalThis.__ccpReleaseDelayedPopupRate = () => resolve({
+        ok: true,
+        rates: { CHF: 1, EUR: 1.08 },
+        date: "2026-07-10",
+        provider: "Delayed popup test rate"
+      });
+    });
+    globalThis.CurrencyRateService = Object.freeze({
+      ...globalThis.CurrencyRateService,
+      getRates: async () => {
+        globalThis.__ccpDelayedRateRequested = true;
+        return globalThis.__ccpDelayedPopupRate;
+      }
+    });
+    globalThis.__ccpObservedPopupUpdates = [];
+    globalThis.__ccpObservedPopupSettingsReads = 0;
+    globalThis.__ccpPopupUpdateObserver = (message) => {
+      if (message?.type === "UPDATE_SETTINGS") {
+        globalThis.__ccpObservedPopupUpdates.push(structuredClone(message.payload));
+      }
+      if (message?.type === "GET_SETTINGS") {
+        globalThis.__ccpObservedPopupSettingsReads += 1;
+      }
+    };
+    chrome.runtime.onMessage.addListener(globalThis.__ccpPopupUpdateObserver);
+  });
+
+  try {
+    const popup = await openPopupForPage(context, extensionId, shop);
+    await expect(popup.locator("#fromCurrency")).toBeEnabled();
+    await popup.evaluate(() => {
+      const source = document.getElementById("fromCurrency");
+      source.value = "CHF";
+      source.dispatchEvent(new Event("change", { bubbles: true }));
+
+      const displayMode = document.getElementById("displayMode");
+      displayMode.value = "replace";
+      displayMode.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    await expect.poll(() => extensionWorker.evaluate(
+      () => globalThis.__ccpObservedPopupUpdates?.length
+    )).toBe(2);
+    await expect.poll(() => extensionWorker.evaluate(
+      () => globalThis.__ccpDelayedRateRequested
+    )).toBe(true);
+    await popup.close();
+
+    const reopenedPopup = await openPopupForPage(context, extensionId, shop);
+    await expect.poll(() => extensionWorker.evaluate(
+      () => globalThis.__ccpObservedPopupSettingsReads
+    )).toBe(2);
+    await extensionWorker.evaluate(() => globalThis.__ccpReleaseDelayedPopupRate());
+    await expect.poll(() => extensionWorker.evaluate(async () => {
+      const settings = await chrome.storage.sync.get(["fromCurrency", "displayMode"]);
+      return `${settings.fromCurrency}:${settings.displayMode}`;
+    })).toBe("CHF:replace");
+    await expect(reopenedPopup.getByRole(
+      "combobox",
+      { name: "Source currency", exact: true }
+    )).toHaveValue(/^CHF/);
+    await expect(reopenedPopup.getByLabel("Price display")).toHaveValue("replace");
+
+    await extensionWorker.evaluate(() => {
+      globalThis.__ccpSecondDelayedRateRequested = false;
+      globalThis.__ccpSecondDelayedPopupRate = new Promise((resolve) => {
+        globalThis.__ccpReleaseSecondDelayedPopupRate = () => resolve({
+          ok: true,
+          rates: { USD: 1, EUR: 0.9 },
+          date: "2026-07-10",
+          provider: "Second delayed popup test rate"
+        });
+      });
+      globalThis.CurrencyRateService = Object.freeze({
+        ...globalThis.CurrencyRateService,
+        getRates: async () => {
+          globalThis.__ccpSecondDelayedRateRequested = true;
+          return globalThis.__ccpSecondDelayedPopupRate;
+        }
+      });
+    });
+    await reopenedPopup.evaluate(() => {
+      const source = document.getElementById("fromCurrency");
+      source.value = "USD";
+      source.dispatchEvent(new Event("change", { bubbles: true }));
+
+      const target = document.getElementById("toCurrency");
+      target.value = "USD";
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await expect.poll(() => extensionWorker.evaluate(
+      () => globalThis.__ccpObservedPopupUpdates?.length
+    )).toBe(3);
+    await expect.poll(() => extensionWorker.evaluate(
+      () => globalThis.__ccpSecondDelayedRateRequested
+    )).toBe(true);
+    await extensionWorker.evaluate(() => globalThis.__ccpReleaseSecondDelayedPopupRate());
+    await expect.poll(() => extensionWorker.evaluate(async () => {
+      const settings = await chrome.storage.sync.get(["fromCurrency", "toCurrency"]);
+      return `${settings.fromCurrency}:${settings.toCurrency}`;
+    })).toBe("USD:EUR");
+    await expect(reopenedPopup.getByRole(
+      "combobox",
+      { name: "Source currency", exact: true }
+    )).toHaveValue(/^USD/);
+    await expect(reopenedPopup.getByRole(
+      "combobox",
+      { name: "Target currency", exact: true }
+    )).toHaveValue(/^EUR/);
+    await expect(reopenedPopup.locator("#status")).toContainText("Choose two different currencies");
+  } finally {
+    await extensionWorker.evaluate(() => {
+      globalThis.__ccpReleaseDelayedPopupRate?.();
+      globalThis.__ccpReleaseSecondDelayedPopupRate?.();
+      if (globalThis.__ccpPopupUpdateObserver) {
+        chrome.runtime.onMessage.removeListener(globalThis.__ccpPopupUpdateObserver);
+      }
+      globalThis.CurrencyRateService = globalThis.__ccpOriginalRateService;
+      delete globalThis.__ccpOriginalRateService;
+      delete globalThis.__ccpDelayedRateRequested;
+      delete globalThis.__ccpDelayedPopupRate;
+      delete globalThis.__ccpReleaseDelayedPopupRate;
+      delete globalThis.__ccpObservedPopupUpdates;
+      delete globalThis.__ccpObservedPopupSettingsReads;
+      delete globalThis.__ccpPopupUpdateObserver;
+      delete globalThis.__ccpSecondDelayedRateRequested;
+      delete globalThis.__ccpSecondDelayedPopupRate;
+      delete globalThis.__ccpReleaseSecondDelayedPopupRate;
+    });
+  }
+});
+
 test("real extension popup, injection, dynamic conversion, and undo work together", async ({
   context,
   extensionWorker,
@@ -225,37 +957,34 @@ test("real extension popup, injection, dynamic conversion, and undo work togethe
   }));
   await shop.goto(SHOP_URL);
 
-  const popup = await context.newPage();
+  const popup = await openPopupForPage(context, extensionId, shop);
   await popup.setViewportSize({ width: 440, height: 600 });
-  await shop.bringToFront();
-  await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
-  await expect(popup.getByRole("heading", { name: "Currency Converter Pro" })).toBeVisible();
-  await expect(popup.getByText("Page conversion", { exact: true })).toBeVisible();
+  await expect(popup.getByText("Enable converter", { exact: true })).toBeHidden();
   await expect(popup.getByRole("button", { name: "Favorite target currency" })).toHaveCount(0);
-  await expect(popup.getByRole("button", { name: "Undo conversion" })).toBeDisabled();
-  await expect(popup.getByRole("button", { name: "Forget site" })).toBeHidden();
+  await expect(popup.locator("#clearPage")).toBeHidden();
+  await expect(popup.locator("#clearSite")).toBeHidden();
+  await expect(popup.locator("#quickConverter")).not.toHaveAttribute("open", "");
   await expect(popup.locator("#pageOptions")).not.toHaveAttribute("open", "");
   await expect(popup.getByRole("combobox", { name: "Source currency", exact: true })).toHaveValue("AUTO");
   await expect(popup.locator("#fromCurrency option").first()).toHaveText("AUTO");
-  await expect(popup.locator("#quickResult")).toHaveText("—");
-  await expect(popup.locator("#quickResult")).toHaveAttribute("data-kind", "empty");
   await expect(popup.getByRole("combobox", { name: "Target currency", exact: true })).toHaveValue(/^EUR/);
+  expect(await popup.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
+
+  await popup.getByText("Convert custom amount", { exact: true }).click();
+  await expect(popup.locator("#quickConverter")).toHaveAttribute("open", "");
+  await expect(popup.locator("#quickSourceRequired")).toBeVisible();
+  await expect(popup.locator("#quickConverterFields")).toBeHidden();
   const sourceCurrency = popup.getByRole("combobox", { name: "Source currency", exact: true });
+  await popup.getByRole("button", { name: "Choose source currency" }).click();
+  await expect(sourceCurrency).toBeFocused();
   await sourceCurrency.fill("USD");
   await popup.getByRole("option", { name: /^USD/ }).click();
   await expect.poll(() => extensionWorker.evaluate(async () =>
     (await chrome.storage.sync.get("fromCurrency")).fromCurrency
-  )).toBe("AUTO");
-  await expect.poll(() => extensionWorker.evaluate(async (origin) =>
-    (await chrome.storage.local.get("siteSourceCurrencies")).siteSourceCurrencies?.[origin],
-  new URL(SHOP_URL).origin)).toBe("USD");
-  expect(await extensionWorker.evaluate(async () =>
-    (await getSettings("https://another-shop.example/product")).settings.fromCurrency
-  )).toBe("AUTO");
-  expect(await extensionWorker.evaluate(async (origin) =>
-    (await getSettings(origin)).settings.fromCurrency,
-  SHOP_URL)).toBe("USD");
+  )).toBe("USD");
   await expect(sourceCurrency).toHaveValue(/^USD/);
+  await expect(popup.locator("#quickSourceRequired")).toBeHidden();
+  await expect(popup.locator("#quickConverterFields")).toBeVisible();
   await expect(popup.locator("#quickResult")).toContainText("0,90");
   await popup.getByRole("textbox", { name: "Amount", exact: true }).fill("25");
   await expect(popup.locator("#quickResult")).toContainText("22,50");
@@ -263,10 +992,12 @@ test("real extension popup, injection, dynamic conversion, and undo work togethe
   await expect(popup.locator("#quickRateInfo")).toHaveAttribute("title", /Frankfurter/);
   await expect(popup.locator("#fromCurrency option[value='AFN']")).toHaveCount(1);
   await expect(popup.locator("#toCurrency option[value='AFN']")).toHaveCount(0);
-  expect(await popup.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
+  await popup.getByText("Convert custom amount", { exact: true }).click();
+  await expect(popup.locator("#quickConverter")).not.toHaveAttribute("open", "");
 
   await popup.getByText("Page options", { exact: true }).click();
   await expect(popup.locator("#pageOptions")).toHaveAttribute("open", "");
+  await expect(popup.getByText("Enable converter", { exact: true })).toBeVisible();
   await popup.getByLabel("Price display").selectOption("replace");
   await expect.poll(() => extensionWorker.evaluate(async () =>
     (await chrome.storage.sync.get("displayMode")).displayMode
@@ -288,6 +1019,23 @@ test("real extension popup, injection, dynamic conversion, and undo work togethe
   await expect(shop.locator("#large-price")).toContainText("36,00");
   await expect(shop.locator("#hidden-price ccp-conversion")).toHaveCount(0);
   await expect(shop.locator(".ccp-badge").first()).toHaveAttribute("title", /1 USD = 0\.9 EUR.*Frankfurter/);
+
+  const initialConversion = shop.locator("#initial ccp-conversion");
+  await initialConversion.evaluate((element) => {
+    element.dataset.preservationCheck = "same-conversion";
+  });
+  await extensionWorker.evaluate(() => chrome.storage.sync.set({ showPagePrompt: true }));
+  await runPageCommand(extensionWorker, "SHOW_CONVERT_PROMPT");
+  await expect(initialConversion).toHaveAttribute("data-preservation-check", "same-conversion");
+  await expect(shop.locator(".ccp-page-prompt")).toHaveCount(0);
+
+  await extensionWorker.evaluate(() => chrome.storage.sync.set({ displayMode: "replace" }));
+  await expect(initialConversion).toHaveAttribute("data-display-mode", "replace");
+  await expect(initialConversion).not.toHaveAttribute("data-preservation-check", /.+/);
+  await expect(initialConversion.locator(".ccp-original")).toBeHidden();
+  await extensionWorker.evaluate(() => chrome.storage.sync.set({ displayMode: "beside" }));
+  await expect(initialConversion).toHaveAttribute("data-display-mode", "beside");
+  await expect(initialConversion.locator(".ccp-original")).toBeVisible();
 
   await shop.evaluate(() => globalThis.addDynamicPrice());
   await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(3);

@@ -7,32 +7,24 @@
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
-    <main class="app">
+    <main id="popupApp" class="app" aria-busy="true">
       <header class="header">
         <div>
           <h1>Currency Converter Pro</h1>
           <p id="siteState" class="site-state">Current page</p>
         </div>
-        <label class="page-toggle" title="Enable webpage conversion">
-          <span>Page conversion</span>
-          <span class="switch">
-            <input id="enabled" type="checkbox">
-            <span class="switch-track" aria-hidden="true"></span>
-            <span class="sr-only">Webpage conversion enabled</span>
-          </span>
-        </label>
       </header>
 
       <section class="currency-panel" aria-label="Currency pair">
         <label class="field">
           <span>From</span>
           <span class="currency-combobox">
-            <input id="fromCurrencySearch" type="text" role="combobox" aria-label="Source currency" aria-autocomplete="list" aria-expanded="false" aria-controls="fromCurrencyList" autocomplete="off" spellcheck="false">
+            <input id="fromCurrencySearch" type="text" role="combobox" aria-label="Source currency" aria-autocomplete="list" aria-expanded="false" aria-controls="fromCurrencyList" autocomplete="off" spellcheck="false" disabled>
             <span id="fromCurrencyList" class="currency-listbox" role="listbox" aria-label="Source currencies" hidden></span>
-            <select id="fromCurrency" class="currency-select-native" aria-hidden="true" tabindex="-1"></select>
+            <select id="fromCurrency" class="currency-select-native" aria-hidden="true" tabindex="-1" disabled></select>
           </span>
         </label>
-        <button id="swapCurrencies" class="icon-button" type="button" title="Swap currencies" aria-label="Swap currencies">
+        <button id="swapCurrencies" class="icon-button" type="button" title="Swap currencies" aria-label="Swap currencies" disabled>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m17 2 4 4-4 4"/>
             <path d="M3 6h18"/>
@@ -43,58 +35,83 @@
         <label class="field">
           <span>To</span>
           <span class="currency-combobox">
-            <input id="toCurrencySearch" type="text" role="combobox" aria-label="Target currency" aria-autocomplete="list" aria-expanded="false" aria-controls="toCurrencyList" autocomplete="off" spellcheck="false">
+            <input id="toCurrencySearch" type="text" role="combobox" aria-label="Target currency" aria-autocomplete="list" aria-expanded="false" aria-controls="toCurrencyList" autocomplete="off" spellcheck="false" disabled>
             <span id="toCurrencyList" class="currency-listbox" role="listbox" aria-label="Target currencies" hidden></span>
-            <select id="toCurrency" class="currency-select-native" aria-hidden="true" tabindex="-1"></select>
+            <select id="toCurrency" class="currency-select-native" aria-hidden="true" tabindex="-1" disabled></select>
           </span>
         </label>
       </section>
 
-      <section class="quick-converter" aria-labelledby="quickConverterTitle">
-        <h2 id="quickConverterTitle">Convert custom amount</h2>
-        <div class="quick-converter-grid">
-          <label class="field" for="quickAmount">
-            <span>Amount</span>
-            <input id="quickAmount" type="text" inputmode="decimal" autocomplete="off" value="1">
-          </label>
-          <div class="quick-output">
-            <span>Result</span>
-            <output id="quickResult" for="quickAmount fromCurrency toCurrency" aria-live="polite">—</output>
+      <button id="convertSite" class="primary" type="button" disabled>Turn on and convert page</button>
+
+      <details id="quickConverter" class="quick-converter" inert>
+        <summary id="quickConverterTitle">Convert custom amount</summary>
+        <div class="quick-converter-content">
+          <div id="quickSourceRequired" class="quick-source-required" hidden>
+            <p>Choose a source currency before converting an amount.</p>
+            <button id="chooseQuickSource" class="secondary" type="button" disabled>Choose source currency</button>
           </div>
+          <div id="quickConverterFields" class="quick-converter-grid">
+            <label class="field" for="quickAmount">
+              <span>Amount</span>
+              <input id="quickAmount" type="text" inputmode="decimal" autocomplete="off" value="1" disabled>
+            </label>
+            <div class="quick-output">
+              <span>Result</span>
+              <output id="quickResult" for="quickAmount fromCurrency toCurrency" aria-live="polite">—</output>
+            </div>
+          </div>
+          <p id="quickRateInfo" class="quick-rate-info"></p>
         </div>
-        <p id="quickRateInfo" class="quick-rate-info"></p>
-      </section>
+      </details>
 
-      <button id="convertSite" class="primary" type="button">Convert page prices</button>
-
-      <details id="pageOptions" class="page-options">
+      <details id="pageOptions" class="page-options" inert>
         <summary>Page options</summary>
         <div class="page-options-content">
+          <div class="enable-row">
+            <span>
+              <label id="enabledLabel" for="enabled"><strong>Enable converter</strong></label>
+              <small id="enabledHelp">Pause or resume price detection and conversion without changing automatic-site choices.</small>
+            </span>
+            <span class="switch">
+              <input id="enabled" type="checkbox" aria-labelledby="enabledLabel" aria-describedby="enabledHelp" disabled>
+              <span class="switch-track" aria-hidden="true"></span>
+            </span>
+          </div>
+
           <label class="display-row">
             <span>Price display</span>
-            <select id="displayMode">
+            <select id="displayMode" disabled>
               <option value="beside">Original and converted</option>
               <option value="replace">Converted only</option>
             </select>
           </label>
 
-          <label class="remember-row">
-            <input id="rememberSite" type="checkbox">
+          <div class="remember-row">
+            <input id="rememberSite" type="checkbox" aria-labelledby="rememberSiteLabel" aria-describedby="rememberSiteHelp" disabled>
             <span>
-              <strong>Always convert this website</strong>
-              <small id="rememberSiteHelp">Automatically converts this website when you revisit it.</small>
+              <label id="rememberSiteLabel" for="rememberSite"><strong>Convert this site automatically</strong></label>
+              <small id="rememberSiteHelp">Uses local price detection to convert this site automatically when you visit it.</small>
             </span>
-          </label>
+          </div>
+
+          <div class="prompt-row">
+            <input id="showPagePrompt" type="checkbox" aria-labelledby="showPagePromptLabel" aria-describedby="showPagePromptHelp" disabled>
+            <span>
+              <label id="showPagePromptLabel" for="showPagePrompt"><strong>Show the on-page Convert button</strong></label>
+              <small id="showPagePromptHelp">Appears automatically after a supported price is detected on the page.</small>
+            </span>
+          </div>
         </div>
       </details>
 
-      <div id="secondaryActions" class="secondary-actions">
-        <button id="clearPage" class="secondary" type="button" disabled>Undo conversion</button>
-        <button id="clearSite" class="secondary danger" type="button" hidden>Forget site</button>
+      <div id="secondaryActions" class="secondary-actions" hidden>
+        <button id="clearPage" class="secondary" type="button" hidden disabled>Restore original prices</button>
+        <button id="clearSite" class="secondary danger" type="button" hidden disabled>Clear site setting</button>
       </div>
 
-      <div id="statusContainer" class="status-container" style="display: none;">
-        <p id="status" class="status" role="status" aria-live="polite"></p>
+      <div id="statusContainer" class="status-container" data-visible="false" role="status" aria-live="polite" aria-atomic="true">
+        <p id="status" class="status"></p>
       </div>
       <p id="rateInfo" class="rate-info"></p>
       <p class="hint">Highlight a price for a quick conversion, or press <kbd id="shortcutKey">Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Y</kbd>.</p>

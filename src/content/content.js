@@ -5,6 +5,8 @@
   const M = CurrencyMessages;
   let settings = null;
   let settingsLoadPromise = null;
+  let pageCommandGeneration = 0;
+  let renderedConversionSettingsKey = null;
 
   ExtensionAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === M.CONTENT_READY) {
@@ -26,36 +28,73 @@
       changes.enabled || changes.fromCurrency || changes.toCurrency ||
       changes.displayMode || changes.showPagePrompt
     )) {
-      settingsLoadPromise = loadSettings();
-      await settingsLoadPromise;
+      if (changes.enabled || changes.fromCurrency || changes.toCurrency || changes.displayMode) {
+        invalidatePendingPageCommands();
+      }
+      await queueSettingsReload({ failClosed: Boolean(
+        changes.enabled || changes.fromCurrency || changes.toCurrency || changes.displayMode
+      ) });
     }
-    if (areaName === "local" && changes.siteSourceCurrencies) {
-      settingsLoadPromise = loadSettings();
-      await settingsLoadPromise;
-    } else if (areaName === "local" && changes.autoConvertSites && settings?.enabled) {
-      await applySitePreference();
+    if (areaName === "local") {
+      const sourceChanged = changes.siteSourceCurrencies &&
+        siteSourceChangeAffectsCurrentOrigin(changes.siteSourceCurrencies);
+      const preferenceChanged = changes.autoConvertSites &&
+        sitePreferenceChangeAffectsCurrentOrigin(changes.autoConvertSites);
+      if (!sourceChanged && !preferenceChanged) return;
+      invalidatePendingPageCommands();
+      const preferenceRemoved = preferenceChanged &&
+        sitePreferenceWasRemovedFromCurrentOrigin(changes.autoConvertSites);
+      if (preferenceRemoved) {
+        clearRenderedConversions();
+        CurrencyPageUi.clearTransientUi();
+        CurrencyPageUi.removePageConvertPrompt();
+      }
+      const badgeUpdate = preferenceRemoved ? updateBadge(0) : Promise.resolve();
+      await Promise.all([
+        badgeUpdate,
+        queueSettingsReload({ failClosed: true })
+      ]);
     }
   });
 
   CurrencyPageUi.installSelectionListeners();
-  settingsLoadPromise = loadSettings();
+  settingsLoadPromise = loadSettings(pageCommandGeneration, { failClosed: true });
 
   function handleMessage(message) {
     switch (message?.type) {
-      case M.RUN_SITE_CONVERSION:
-        return ensureSettingsLoaded().then(async () => {
+      case M.RUN_SITE_CONVERSION: {
+        const commandGeneration = pageCommandGeneration;
+        return queueSettingsTask(async () => {
+          if (commandGeneration !== pageCommandGeneration) return cancelledCommandResult();
+          const refreshed = await refreshSettingsForCommand();
+          if (!refreshed) {
+            return { ok: false, error: "Could not refresh the saved conversion settings." };
+          }
+          if (commandGeneration !== pageCommandGeneration) return cancelledCommandResult();
           const result = await runSiteConversion();
+          if (commandGeneration !== pageCommandGeneration) return cancelledCommandResult();
           CurrencyPageUi.removePageConvertPrompt();
-          showConversionResult(result);
+          if (!result?.cancelled) showConversionResult(result);
           return result;
         });
+      }
       case M.CLEAR_SITE_CONVERSION:
-        return ensureSettingsLoaded().then(() => clearSiteConversion({
+        return clearSiteConversion({
           forgetSite: message.forgetSite,
           suppressPrompt: message.suppressPrompt
-        }));
-      case M.SHOW_CONVERT_PROMPT:
-        return ensureSettingsLoaded().then(applySitePreference).then(() => ({ ok: true }));
+        });
+      case M.SHOW_CONVERT_PROMPT: {
+        const commandGeneration = pageCommandGeneration;
+        return ensureSettingsLoaded().then(async () => {
+          if (
+            commandGeneration === pageCommandGeneration &&
+            !CurrencyPageConverter.hasConversions()
+          ) {
+            await applySitePreference(commandGeneration);
+          }
+          return { ok: true };
+        });
+      }
       case M.CONVERT_SELECTION:
         return ensureSettingsLoaded().then(convertCurrentSelection);
       default:
@@ -67,64 +106,258 @@
     return settingsLoadPromise || Promise.resolve();
   }
 
-  async function loadSettings() {
-    const result = await ExtensionAPI.runtime.sendMessage({ type: M.GET_SETTINGS });
-    if (!result?.ok) return;
-    settings = result.settings;
-    CurrencyDetector.resetPageCurrencyDetection();
-    CurrencyPageConverter.clearConversions();
-    CurrencyPageConverter.configure(settings);
-    CurrencyPageUi.configure({
-      settings,
-      runConversion: runSiteConversion,
-      convertSelection: CurrencyPageConverter.convertSelectionText
-    });
+  function queueSettingsReload({ failClosed = false } = {}) {
+    const reloadGeneration = pageCommandGeneration;
+    return queueSettingsTask(() => loadSettings(reloadGeneration, { failClosed }));
+  }
+
+  function queueSettingsTask(task) {
+    const pendingTask = settingsLoadPromise || Promise.resolve();
+    const nextTask = pendingTask.catch(() => {}).then(task);
+    settingsLoadPromise = nextTask.then(() => undefined, () => undefined);
+    return nextTask;
+  }
+
+  function invalidatePendingPageCommands() {
+    pageCommandGeneration += 1;
+    CurrencyPageConverter.cancelPendingConversion();
+    CurrencyPageConverter.stopWatching();
+    CurrencyPageConverter.stopDiscovering();
+  }
+
+  function cancelledCommandResult() {
+    return {
+      ok: false,
+      count: 0,
+      cancelled: true,
+      error: "Conversion was cancelled before it could update the page."
+    };
+  }
+
+  async function loadSettings(reloadGeneration, { failClosed = false } = {}) {
+    const previousSettings = settings;
+    let result;
+    try {
+      result = await ExtensionAPI.runtime.sendMessage({ type: M.GET_SETTINGS });
+    } catch (_error) {
+      if (failClosed) await failClosedSettingsReload(reloadGeneration);
+      return;
+    }
+    if (!result?.ok) {
+      if (failClosed) await failClosedSettingsReload(reloadGeneration);
+      return;
+    }
+    const hadConversions = CurrencyPageConverter.hasConversions();
+    const conversionSettingsChanged = adoptSettings(result.settings, previousSettings);
+    if (reloadGeneration !== pageCommandGeneration) return;
+    const renderedSettingsChanged = hadConversions &&
+      renderedConversionSettingsKey !== conversionSettingsKey(settings);
+
+    if (hadConversions && settings.enabled) {
+      if (conversionSettingsChanged || renderedSettingsChanged) {
+        CurrencyPageUi.clearTransientUi();
+        CurrencyPageUi.removePageConvertPrompt();
+        const conversionResult = await runSiteConversion();
+        if (reloadGeneration !== pageCommandGeneration || conversionResult?.cancelled) return;
+        if (conversionResult?.ok) showConversionResult(conversionResult);
+        else {
+          CurrencyPageUi.showToast(
+            `Settings changed, but prices could not be reconverted. Original prices were restored. ${
+              conversionResult?.error || "Try converting the page again."
+            }`
+          );
+        }
+      } else {
+        CurrencyPageConverter.startWatching();
+        if (!settings.showPagePrompt) CurrencyPageUi.removePageConvertPrompt();
+      }
+      return;
+    }
+
+    clearRenderedConversions();
     CurrencyPageUi.clearTransientUi();
     CurrencyPageUi.removePageConvertPrompt();
 
-    if (settings.enabled) await applySitePreference();
+    if (settings.enabled) await applySitePreference(reloadGeneration);
     else {
       await updateBadge(0);
       CurrencyPageUi.removePageConvertPrompt();
     }
   }
 
-  async function applySitePreference() {
+  async function refreshSettingsForCommand() {
+    const result = await ExtensionAPI.runtime.sendMessage({ type: M.GET_SETTINGS });
+    if (!result?.ok) return false;
+    const previousSettings = settings;
+    adoptSettings(result.settings, previousSettings);
+    if (!settings.enabled) {
+      clearRenderedConversions();
+      CurrencyPageUi.clearTransientUi();
+      CurrencyPageUi.removePageConvertPrompt();
+      await updateBadge(0);
+    }
+    return true;
+  }
+
+  function adoptSettings(nextSettings, previousSettings) {
+    settings = nextSettings;
+    const conversionSettingsChanged = !previousSettings || [
+      "enabled",
+      "fromCurrency",
+      "toCurrency",
+      "displayMode"
+    ].some((key) => previousSettings[key] !== settings[key]);
+    if (conversionSettingsChanged) {
+      CurrencyDetector.resetPageCurrencyDetection();
+      CurrencyPageConverter.configure(settings);
+    }
+    CurrencyPageUi.configure({
+      settings,
+      runConversion: runSiteConversion,
+      clearConversion: clearPromptConversion,
+      convertSelection: CurrencyPageConverter.convertSelectionText
+    });
+    return conversionSettingsChanged;
+  }
+
+  async function applySitePreference(expectedGeneration = pageCommandGeneration) {
+    if (expectedGeneration !== pageCommandGeneration) return;
     if (!settings?.enabled) {
       CurrencyPageUi.removePageConvertPrompt();
       CurrencyPageConverter.stopWatching();
+      CurrencyPageConverter.stopDiscovering();
+      return;
+    }
+
+    if (CurrencyPageConverter.hasConversions()) {
+      CurrencyPageConverter.stopDiscovering();
+      CurrencyPageConverter.startWatching();
+      if (!settings.showPagePrompt) CurrencyPageUi.removePageConvertPrompt();
       return;
     }
 
     const status = await getSiteStatus();
+    if (expectedGeneration !== pageCommandGeneration) return;
     if (status?.remembered) {
+      CurrencyPageConverter.stopDiscovering();
       CurrencyPageUi.removePageConvertPrompt();
       const result = await runSiteConversion();
+      if (expectedGeneration !== pageCommandGeneration || result?.cancelled) return;
       if (!result?.ok) {
-        CurrencyPageUi.showPageConvertPrompt();
+        if (settings.showPagePrompt) CurrencyPageUi.showPageConvertPrompt();
         if (result?.detectionConfidence !== "low") showConversionResult(result);
       }
+    } else if (settings.showPagePrompt) {
+      CurrencyPageConverter.stopWatching();
+      await updateBadge(0);
+      if (expectedGeneration !== pageCommandGeneration) return;
+      offerPageConversion(expectedGeneration);
     } else {
-      CurrencyPageUi.showPageConvertPrompt();
+      CurrencyPageConverter.stopWatching();
+      CurrencyPageConverter.stopDiscovering();
+      await updateBadge(0);
+      if (expectedGeneration !== pageCommandGeneration) return;
+      CurrencyPageUi.removePageConvertPrompt();
     }
   }
 
+  function offerPageConversion(expectedGeneration = pageCommandGeneration) {
+    if (
+      expectedGeneration !== pageCommandGeneration ||
+      !settings?.enabled ||
+      !settings.showPagePrompt ||
+      CurrencyPageConverter.hasConversions()
+    ) return;
+
+    const detection = CurrencyPageConverter.detectPagePrices();
+    if (detection.found) {
+      CurrencyPageConverter.stopDiscovering();
+      CurrencyPageUi.showPageConvertPrompt();
+      CurrencyPageConverter.prefetchRates(detection.currencies).catch(() => {});
+      return;
+    }
+
+    CurrencyPageUi.removePageConvertPrompt();
+    CurrencyPageConverter.startDiscovering((nextDetection) => {
+      if (
+        expectedGeneration !== pageCommandGeneration ||
+        !settings?.enabled ||
+        !settings.showPagePrompt ||
+        CurrencyPageConverter.hasConversions()
+      ) return;
+      CurrencyPageUi.showPageConvertPrompt();
+      CurrencyPageConverter.prefetchRates(nextDetection.currencies).catch(() => {});
+    });
+  }
+
   async function runSiteConversion() {
+    CurrencyPageConverter.stopDiscovering();
+    const runSettingsKey = conversionSettingsKey(settings);
     const result = await CurrencyPageConverter.runSiteConversion({ clearExisting: true, observe: true });
-    if (result?.ok) await updateBadge(result.count);
+    if (!result?.cancelled) {
+      renderedConversionSettingsKey = CurrencyPageConverter.hasConversions()
+        ? runSettingsKey
+        : null;
+    } else {
+      renderedConversionSettingsKey = null;
+    }
+    await updateBadge(result?.ok ? result.count : 0);
     return result;
   }
 
   async function clearSiteConversion({ forgetSite = false, suppressPrompt = false } = {}) {
-    CurrencyPageConverter.clearConversions();
+    invalidatePendingPageCommands();
+    clearRenderedConversions();
     await updateBadge(0);
     CurrencyPageUi.clearTransientUi();
     if (forgetSite) {
-      await ExtensionAPI.runtime.sendMessage({ type: M.FORGET_SITE, origin: getCurrentOrigin() });
+      const result = await ExtensionAPI.runtime.sendMessage({
+        type: M.FORGET_SITE,
+        origin: getCurrentOrigin()
+      });
+      if (!result?.ok) return result || { ok: false, error: "Site access could not be removed." };
     }
-    if (settings?.enabled && !suppressPrompt) CurrencyPageUi.showPageConvertPrompt();
-    else CurrencyPageUi.removePageConvertPrompt();
+    if (settings?.enabled && settings.showPagePrompt && !suppressPrompt && !forgetSite) {
+      CurrencyPageUi.showPageConvertPrompt();
+    } else CurrencyPageUi.removePageConvertPrompt();
     return { ok: true };
+  }
+
+  async function clearPromptConversion() {
+    invalidatePendingPageCommands();
+    clearRenderedConversions();
+    await updateBadge(0);
+    return { ok: true };
+  }
+
+  function clearRenderedConversions() {
+    CurrencyPageConverter.clearConversions();
+    renderedConversionSettingsKey = null;
+  }
+
+  function conversionSettingsKey(value) {
+    return JSON.stringify([
+      value?.enabled,
+      value?.fromCurrency,
+      value?.toCurrency,
+      value?.displayMode
+    ]);
+  }
+
+  async function failClosedSettingsReload(reloadGeneration) {
+    if (reloadGeneration !== pageCommandGeneration) return;
+    const disabledSettings = {
+      enabled: false,
+      fromCurrency: settings?.fromCurrency || "AUTO",
+      toCurrency: settings?.toCurrency || "EUR",
+      displayMode: settings?.displayMode || "beside",
+      showPagePrompt: false
+    };
+    adoptSettings(disabledSettings, settings);
+    clearRenderedConversions();
+    CurrencyPageUi.clearTransientUi();
+    CurrencyPageUi.removePageConvertPrompt();
+    await updateBadge(0);
   }
 
   function getSiteStatus() {
@@ -133,6 +366,21 @@
 
   function getCurrentOrigin() {
     return /^https?:$/.test(window.location.protocol) ? window.location.origin : window.location.href;
+  }
+
+  function siteSourceChangeAffectsCurrentOrigin(change) {
+    const origin = getCurrentOrigin();
+    return change?.oldValue?.[origin] !== change?.newValue?.[origin];
+  }
+
+  function sitePreferenceChangeAffectsCurrentOrigin(change) {
+    const origin = getCurrentOrigin();
+    return change?.oldValue?.[origin] !== change?.newValue?.[origin];
+  }
+
+  function sitePreferenceWasRemovedFromCurrentOrigin(change) {
+    const origin = getCurrentOrigin();
+    return change?.oldValue?.[origin] === true && change?.newValue?.[origin] !== true;
   }
 
   async function convertCurrentSelection() {
