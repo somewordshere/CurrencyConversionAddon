@@ -189,6 +189,9 @@ async function seedExtension(worker, sites) {
       fromCurrency: "AUTO",
       toCurrency: "EUR",
       displayMode: "beside",
+      convertedTextColor: "#166534",
+      convertedBackgroundColor: "#dcfce7",
+      convertedShape: "rounded",
       showPagePrompt: true
     });
     await chrome.storage.local.set({
@@ -212,6 +215,9 @@ async function updateConversionSettings(worker, fromCurrency, toCurrency, siteUr
       fromCurrency: "AUTO",
       toCurrency,
       displayMode: "beside",
+      convertedTextColor: "#166534",
+      convertedBackgroundColor: "#dcfce7",
+      convertedShape: "rounded",
       showPagePrompt: true
     });
     await chrome.storage.local.set({ siteSourceCurrencies });

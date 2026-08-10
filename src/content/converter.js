@@ -13,6 +13,17 @@
   const DOM_WRITE_BATCH_SIZE = 200;
   const MAX_DISCOVERY_TEXT_NODES = 6000;
   const MAX_DISCOVERY_PRICE_ELEMENTS = 300;
+  const DEFAULT_CONVERTED_APPEARANCE = Object.freeze({
+    textColor: "#166534",
+    backgroundColor: "#dcfce7",
+    shape: "rounded"
+  });
+  const CONVERTED_SHAPE_RADII = Object.freeze({
+    square: "0",
+    rounded: "0.35em",
+    pill: "999px"
+  });
+  const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
   const POSSIBLE_PRICE_TEXT_PATTERN = /[0-9０-９]/;
   const QUICK_CURRENCY_MARKER_PATTERN = new RegExp(
     [...new Set(Object.entries(CurrencyCatalog.CURRENCY_META).flatMap(([currency, meta]) =>
@@ -55,6 +66,7 @@
   let observedUrl = window.location.href;
   const pendingRoots = new Set();
   const observedShadowRoots = new WeakSet();
+  const renderedConversions = new Set();
 
   function configure(nextSettings) {
     cancelPendingConversion();
@@ -627,12 +639,11 @@
     badge.dataset.ccpOwned = "true";
     badge.dataset.ccpAppended = "true";
     badge.className = "ccp-conversion";
-    const converted = document.createElement("span");
-    converted.className = "ccp-badge";
-    converted.textContent = ` ≈ ${convertAmount(match.amount, match.currency)}`;
-    converted.title = conversionTitle(match.currency);
+    badge.style.setProperty("display", "inline", "important");
+    const converted = createConvertedBadge(match, { adjacent: true });
     badge.appendChild(converted);
     element.appendChild(badge);
+    renderedConversions.add(badge);
     return 1;
   }
 
@@ -642,15 +653,56 @@
     wrapper.dataset.sourceCurrency = match.currency;
     wrapper.dataset.displayMode = settings.displayMode === "replace" ? "replace" : "beside";
     wrapper.className = "ccp-conversion";
+    wrapper.style.setProperty("display", "inline", "important");
     const original = document.createElement("span");
     original.className = "ccp-original";
     original.textContent = match.raw;
+    original.style.setProperty(
+      "display",
+      settings.displayMode === "replace" ? "none" : "inline",
+      "important"
+    );
+    const converted = createConvertedBadge(match, {
+      adjacent: settings.displayMode !== "replace"
+    });
+    wrapper.append(original, converted);
+    renderedConversions.add(wrapper);
+    return wrapper;
+  }
+
+  function createConvertedBadge(match, { adjacent }) {
     const converted = document.createElement("span");
     converted.className = "ccp-badge";
-    converted.textContent = ` ≈ ${convertAmount(match.amount, match.currency)}`;
+    converted.textContent = `≈ ${convertAmount(match.amount, match.currency)}`;
     converted.title = conversionTitle(match.currency);
-    wrapper.append(original, converted);
-    return wrapper;
+    applyConvertedAppearance(converted, { adjacent });
+    return converted;
+  }
+
+  function applyConvertedAppearance(converted, { adjacent }) {
+    const textColor = HEX_COLOR_PATTERN.test(settings?.convertedTextColor || "")
+      ? settings.convertedTextColor
+      : DEFAULT_CONVERTED_APPEARANCE.textColor;
+    const backgroundColor = HEX_COLOR_PATTERN.test(settings?.convertedBackgroundColor || "")
+      ? settings.convertedBackgroundColor
+      : DEFAULT_CONVERTED_APPEARANCE.backgroundColor;
+    const shape = Object.hasOwn(CONVERTED_SHAPE_RADII, settings?.convertedShape)
+      ? settings.convertedShape
+      : DEFAULT_CONVERTED_APPEARANCE.shape;
+
+    converted.dataset.ccpShape = shape;
+    for (const [property, value] of Object.entries({
+      display: "inline-block",
+      color: textColor,
+      "background-color": backgroundColor,
+      "border-radius": CONVERTED_SHAPE_RADII[shape],
+      "font-weight": "700",
+      "margin-inline-start": adjacent ? "0.28em" : "0",
+      padding: "0.08em 0.34em",
+      "white-space": "nowrap"
+    })) {
+      converted.style.setProperty(property, value, "important");
+    }
   }
 
   function conversionTitle(baseCurrency) {
@@ -775,7 +827,9 @@
   }
 
   function removeConversionsOnly() {
-    for (const wrapper of document.querySelectorAll(OWNED_SELECTOR)) {
+    for (const wrapper of [...renderedConversions]) {
+      renderedConversions.delete(wrapper);
+      if (!wrapper.isConnected) continue;
       if (wrapper.dataset.ccpAppended === "true") {
         wrapper.remove();
       } else {
@@ -798,7 +852,11 @@
   }
 
   function hasConversions() {
-    return Boolean(document.querySelector(OWNED_SELECTOR));
+    for (const wrapper of [...renderedConversions]) {
+      if (wrapper.isConnected) return true;
+      renderedConversions.delete(wrapper);
+    }
+    return false;
   }
 
   global.CurrencyPageConverter = Object.freeze({

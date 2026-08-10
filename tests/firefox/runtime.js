@@ -246,6 +246,9 @@ async function seedExtensionState(driver, extensionOrigin, fixtureUrl) {
       fromCurrency: "AUTO",
       toCurrency: "EUR",
       displayMode: "beside",
+      convertedTextColor: "#166534",
+      convertedBackgroundColor: "#dcfce7",
+      convertedShape: "rounded",
       showPagePrompt: false
     },
     local: {

@@ -24,16 +24,17 @@
   });
 
   ExtensionAPI.storage.onChanged.addListener(async (changes, areaName) => {
-    if (areaName === "sync" && (
-      changes.enabled || changes.fromCurrency || changes.toCurrency ||
-      changes.displayMode || changes.showPagePrompt
-    )) {
-      if (changes.enabled || changes.fromCurrency || changes.toCurrency || changes.displayMode) {
-        invalidatePendingPageCommands();
+    if (areaName === "sync") {
+      const conversionSettingsChanged = Boolean(
+        changes.enabled || changes.fromCurrency || changes.toCurrency || changes.displayMode ||
+        changes.convertedTextColor || changes.convertedBackgroundColor || changes.convertedShape
+      );
+      if (conversionSettingsChanged || changes.showPagePrompt) {
+        if (conversionSettingsChanged) {
+          invalidatePendingPageCommands();
+        }
+        await queueSettingsReload({ failClosed: conversionSettingsChanged });
       }
-      await queueSettingsReload({ failClosed: Boolean(
-        changes.enabled || changes.fromCurrency || changes.toCurrency || changes.displayMode
-      ) });
     }
     if (areaName === "local") {
       const sourceChanged = changes.siteSourceCurrencies &&
@@ -205,7 +206,10 @@
       "enabled",
       "fromCurrency",
       "toCurrency",
-      "displayMode"
+      "displayMode",
+      "convertedTextColor",
+      "convertedBackgroundColor",
+      "convertedShape"
     ].some((key) => previousSettings[key] !== settings[key]);
     if (conversionSettingsChanged) {
       CurrencyDetector.resetPageCurrencyDetection();
@@ -340,7 +344,10 @@
       value?.enabled,
       value?.fromCurrency,
       value?.toCurrency,
-      value?.displayMode
+      value?.displayMode,
+      value?.convertedTextColor,
+      value?.convertedBackgroundColor,
+      value?.convertedShape
     ]);
   }
 
@@ -351,6 +358,9 @@
       fromCurrency: settings?.fromCurrency || "AUTO",
       toCurrency: settings?.toCurrency || "EUR",
       displayMode: settings?.displayMode || "beside",
+      convertedTextColor: settings?.convertedTextColor || "#166534",
+      convertedBackgroundColor: settings?.convertedBackgroundColor || "#dcfce7",
+      convertedShape: settings?.convertedShape || "rounded",
       showPagePrompt: false
     };
     adoptSettings(disabledSettings, settings);

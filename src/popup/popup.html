@@ -87,6 +87,67 @@
             </select>
           </label>
 
+          <fieldset class="appearance-editor" aria-describedby="appearanceHelp">
+            <legend>Converted price appearance</legend>
+            <p id="appearanceHelp" class="appearance-help">Choose colors and a shape, then compare the original converter style with your changes.</p>
+
+            <div class="appearance-color-grid">
+              <div class="color-setting" role="group" aria-labelledby="convertedTextColorLabel">
+                <span id="convertedTextColorLabel" class="setting-label">Text color</span>
+                <div class="color-inputs">
+                  <input id="convertedTextColor" type="color" aria-label="Text color picker" value="#166534" disabled>
+                  <input id="convertedTextColorHex" class="color-hex" type="text" aria-label="Text color hex value" aria-describedby="colorFormatHelp" value="#166534" maxlength="7" pattern="#[0-9A-Fa-f]{6}" autocomplete="off" spellcheck="false" disabled>
+                </div>
+              </div>
+
+              <div class="color-setting" role="group" aria-labelledby="convertedBackgroundColorLabel">
+                <span id="convertedBackgroundColorLabel" class="setting-label">Background</span>
+                <div class="color-inputs">
+                  <input id="convertedBackgroundColor" type="color" aria-label="Background color picker" value="#dcfce7" disabled>
+                  <input id="convertedBackgroundColorHex" class="color-hex" type="text" aria-label="Background color hex value" aria-describedby="colorFormatHelp" value="#dcfce7" maxlength="7" pattern="#[0-9A-Fa-f]{6}" autocomplete="off" spellcheck="false" disabled>
+                </div>
+              </div>
+            </div>
+            <p id="colorFormatHelp" class="color-format-help">Hex format: #RRGGBB</p>
+
+            <fieldset class="shape-picker">
+              <legend>Shape</legend>
+              <div class="shape-options">
+                <label>
+                  <input type="radio" name="convertedShape" value="square" disabled>
+                  <span>Square</span>
+                </label>
+                <label>
+                  <input type="radio" name="convertedShape" value="rounded" checked disabled>
+                  <span>Rounded</span>
+                </label>
+                <label>
+                  <input type="radio" name="convertedShape" value="pill" disabled>
+                  <span>Pill</span>
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="appearance-comparison" role="group" aria-label="Converted price appearance comparison">
+              <div class="preview-card">
+                <span class="preview-label">Before · Default</span>
+                <div class="preview-stage">
+                  <span>$100.00</span><span class="converted-preview preview-before" aria-label="Before preview: approximately 90 euros in default green text without a background">&asymp; &euro;90.00</span>
+                </div>
+              </div>
+              <div class="preview-card">
+                <span class="preview-label">After · Your style</span>
+                <div class="preview-stage">
+                  <span>$100.00</span><span id="appearancePreview" class="converted-preview preview-after">&asymp; &euro;90.00</span>
+                </div>
+              </div>
+            </div>
+
+            <p id="appearanceContrast" class="appearance-contrast"></p>
+            <span id="appearanceAnnouncement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
+            <button id="resetAppearance" class="reset-appearance" type="button" disabled>Reset appearance</button>
+          </fieldset>
+
           <div class="remember-row">
             <input id="rememberSite" type="checkbox" aria-labelledby="rememberSiteLabel" aria-describedby="rememberSiteHelp" disabled>
             <span>

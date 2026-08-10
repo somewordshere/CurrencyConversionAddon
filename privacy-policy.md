@@ -1,6 +1,6 @@
 # Currency Converter Pro Privacy Policy
 
-Effective date: July 27, 2026 (version 1.8.0)
+Effective date: August 5, 2026 (version 1.9.1)
 
 Currency Converter Pro is a Chrome and Firefox extension that identifies prices on webpages and converts them into a currency selected by the user.
 
@@ -35,7 +35,7 @@ The extension stores:
 - Whether the extension is enabled
 - The selected source-currency mode
 - The selected target currency
-- Price-display and page-prompt preferences
+- Price-display, converted-price appearance, and page-prompt preferences
 - Recently selected currency codes
 - A cache of exchange rates, including the rate date and fetch time
 - The origins of websites the user chooses for automatic conversion

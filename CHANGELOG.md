@@ -2,6 +2,25 @@
 
 All notable changes to Currency Converter Pro are documented here. Dates reflect the release preparation date for each version.
 
+## 1.9.1 - 2026-08-05
+
+### Fixed
+
+- Fixed the toolbar popup collapsing to a narrow layout in Chrome and Firefox by restoring deterministic popup sizing.
+- Kept expanded Page options usable within browser popup height limits by scrolling the popup content internally.
+- Normalized color swatches and disclosure markers for Firefox rendering.
+
+### Testing
+
+- Added real Chrome action-popup coverage for popup width, horizontal overflow, and expanded-options scrolling.
+
+## 1.9.0 - 2026-08-02
+
+### Added
+
+- Added converted-price text and background color controls, square/rounded/pill shapes, and a live before-and-after popup preview.
+- Added real-time WCAG contrast guidance, keyboard-accessible controls, and a one-click appearance reset.
+
 ## 1.8.0 - 2026-07-27
 
 ### Added

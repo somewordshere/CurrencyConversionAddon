@@ -22,6 +22,9 @@ async function seedExtension(extensionWorker, options = {}) {
     fromCurrency: "AUTO",
     toCurrency: "EUR",
     displayMode: "beside",
+    convertedTextColor: "#166534",
+    convertedBackgroundColor: "#dcfce7",
+    convertedShape: "rounded",
     showPagePrompt: false,
     ...(options.settings || {})
   };
@@ -94,6 +97,55 @@ async function openPopupForPage(context, extensionId, activePage) {
   await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
   await expect(popup.getByRole("heading", { name: "Currency Converter Pro" })).toBeVisible();
   return popup;
+}
+
+async function evaluateRealActionPopup(context, extensionWorker, activePage, expression) {
+  await activePage.bringToFront();
+  await extensionWorker.evaluate(() => chrome.action.openPopup());
+
+  const popupUrl = new URL("/popup/popup.html", extensionWorker.url()).href;
+  const cdp = await context.newCDPSession(activePage);
+  let popupTarget;
+
+  try {
+    await expect.poll(async () => {
+      const { targetInfos } = await cdp.send("Target.getTargets");
+      popupTarget = targetInfos.find((target) => target.url === popupUrl);
+      return Boolean(popupTarget);
+    }).toBe(true);
+
+    const { sessionId } = await cdp.send("Target.attachToTarget", {
+      targetId: popupTarget.targetId,
+      flatten: false
+    });
+    const commandId = 1;
+    const response = new Promise((resolve, reject) => {
+      const receive = ({ sessionId: source, message }) => {
+        if (source !== sessionId) return;
+        const payload = JSON.parse(message);
+        if (payload.id !== commandId) return;
+        cdp.off("Target.receivedMessageFromTarget", receive);
+        if (payload.error) reject(new Error(payload.error.message));
+        else resolve(payload);
+      };
+      cdp.on("Target.receivedMessageFromTarget", receive);
+    });
+
+    await cdp.send("Target.sendMessageToTarget", {
+      sessionId,
+      message: JSON.stringify({
+        id: commandId,
+        method: "Runtime.evaluate",
+        params: { expression, awaitPromise: true, returnByValue: true }
+      })
+    });
+
+    const payload = await response;
+    await cdp.send("Target.detachFromTarget", { sessionId });
+    return payload.result.result.value;
+  } finally {
+    await cdp.detach();
+  }
 }
 
 async function runContentUiScenario(extensionWorker, scenario, url = SHOP_URL) {
@@ -172,6 +224,57 @@ async function runContentUiScenario(extensionWorker, scenario, url = SHOP_URL) {
   }, { scenario, url });
 }
 
+test("real action popup keeps its designed width and scrolls expanded options", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker);
+  const activePage = await context.newPage();
+
+  const metrics = await evaluateRealActionPopup(
+    context,
+    extensionWorker,
+    activePage,
+    `(async () => {
+      const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+      await wait(300);
+
+      const measure = () => {
+        const app = document.querySelector("#popupApp");
+        const initialScrollTop = app.scrollTop;
+        app.scrollTop = app.scrollHeight;
+        const maxScrollTop = app.scrollTop;
+        app.scrollTop = initialScrollTop;
+        return {
+          innerWidth,
+          bodyWidth: document.body.getBoundingClientRect().width,
+          pageScrollWidth: document.documentElement.scrollWidth,
+          appClientHeight: app.clientHeight,
+          appScrollHeight: app.scrollHeight,
+          maxScrollTop
+        };
+      };
+
+      const closed = measure();
+      document.querySelector("#pageOptions").open = true;
+      await wait(350);
+      return { closed, expanded: measure() };
+    })()`
+  );
+
+  expect(metrics.closed.innerWidth).toBe(420);
+  expect(metrics.closed.bodyWidth).toBe(420);
+  expect(metrics.closed.appScrollHeight).toBeLessThanOrEqual(metrics.closed.appClientHeight);
+
+  for (const state of [metrics.closed, metrics.expanded]) {
+    expect(state.bodyWidth).toBe(420);
+    expect(state.pageScrollWidth).toBeLessThanOrEqual(state.innerWidth);
+  }
+  expect(metrics.expanded.appClientHeight).toBe(600);
+  expect(metrics.expanded.appScrollHeight).toBeGreaterThan(metrics.expanded.appClientHeight);
+  expect(metrics.expanded.maxScrollTop).toBeGreaterThan(0);
+});
+
 test("automatically detects prices and offers conversion on an ordinary website", async ({
   context,
   extensionWorker
@@ -194,7 +297,13 @@ test("converts marked prices split across neutral, obfuscated elements", async (
   context,
   extensionWorker
 }) => {
-  await seedExtension(extensionWorker);
+  await seedExtension(extensionWorker, {
+    settings: {
+      convertedTextColor: "#0f172a",
+      convertedBackgroundColor: "#f8fafc",
+      convertedShape: "square"
+    }
+  });
 
   const shop = await context.newPage();
   await shop.route(SPLIT_PRICE_URL, (route) => route.fulfill({
@@ -213,6 +322,10 @@ test("converts marked prices split across neutral, obfuscated elements", async (
   expect(conversion.count).toBe(1);
   expect(conversion.detectedCurrency).toBe("CHF");
   await expect(shop.locator("#digitec-price ccp-conversion")).toContainText("474");
+  const splitBadge = shop.locator("#digitec-price .ccp-badge");
+  await expect(splitBadge).toHaveCSS("color", "rgb(15, 23, 42)");
+  await expect(splitBadge).toHaveCSS("background-color", "rgb(248, 250, 252)");
+  await expect(splitBadge).toHaveAttribute("data-ccp-shape", "square");
 
   const allegro = await context.newPage();
   await allegro.route(SPLIT_FRACTION_URL, (route) => route.fulfill({
@@ -940,6 +1053,114 @@ test("rapid popup changes remain consistent across close and validation races", 
       delete globalThis.__ccpReleaseSecondDelayedPopupRate;
     });
   }
+});
+
+test("converted price appearance previews live, persists, and styles the page", async ({
+  context,
+  extensionWorker,
+  extensionId
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "USD", showPagePrompt: false }
+  });
+
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(SHOP_URL);
+  await shop.evaluate(() => {
+    const host = document.createElement("div");
+    host.id = "shadow-price-host";
+    host.attachShadow({ mode: "open" }).innerHTML = '<p id="shadow-price">Shadow price: $20.00</p>';
+    document.body.appendChild(host);
+  });
+
+  const initialConversion = await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION");
+  expect(initialConversion.ok).toBe(true);
+  const convertedBadge = shop.locator("#initial .ccp-badge");
+  const shadowBadge = shop.locator("#shadow-price .ccp-badge");
+  await expect(convertedBadge).toHaveCSS("color", "rgb(22, 101, 52)");
+  await expect(shadowBadge).toHaveCSS("background-color", "rgb(220, 252, 231)");
+
+  const popup = await openPopupForPage(context, extensionId, shop);
+  await popup.setViewportSize({ width: 440, height: 600 });
+  await popup.getByText("Page options", { exact: true }).click();
+  const appearanceGroup = popup.getByRole("group", {
+    name: "Converted price appearance",
+    exact: true
+  });
+  await expect(appearanceGroup).toBeVisible();
+  const beforePreview = popup.locator(".preview-before");
+  const afterPreview = popup.locator("#appearancePreview");
+  const textHex = popup.getByRole("textbox", { name: "Text color hex value" });
+  const backgroundHex = popup.getByRole("textbox", { name: "Background color hex value" });
+  expect(await popup.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await popup.setViewportSize({ width: 420, height: 600 });
+  expect(await popup.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expect(afterPreview).toBeVisible();
+  await popup.setViewportSize({ width: 440, height: 600 });
+
+  await expect(beforePreview).toHaveCSS("color", "rgb(21, 128, 61)");
+  await textHex.fill("#FFFFFF");
+  await expect(afterPreview).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(popup.locator("#appearanceContrast")).toContainText("fails WCAG AA");
+  expect(await extensionWorker.evaluate(async () =>
+    (await chrome.storage.sync.get("convertedTextColor")).convertedTextColor
+  )).toBe("#166534");
+
+  await textHex.blur();
+  await backgroundHex.fill("#111827");
+  await expect.poll(() => extensionWorker.evaluate(async () =>
+    (await chrome.storage.sync.get("convertedTextColor")).convertedTextColor
+  )).toBe("#ffffff");
+  await expect(backgroundHex).toHaveValue("#111827");
+  await expect(afterPreview).toHaveCSS("background-color", "rgb(17, 24, 39)");
+  await expect(popup.locator("#appearanceContrast")).toContainText("passes WCAG AAA");
+  await expect(convertedBadge).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(shadowBadge).toHaveCSS("color", "rgb(255, 255, 255)");
+  await backgroundHex.blur();
+  await popup.getByText("Pill", { exact: true }).click();
+  await expect(popup.getByRole("radio", { name: "Pill" })).toBeChecked();
+  await expect(afterPreview).toHaveCSS("border-radius", "999px");
+  await expect.poll(() => extensionWorker.evaluate(async () => {
+    const settings = await chrome.storage.sync.get([
+      "convertedTextColor",
+      "convertedBackgroundColor",
+      "convertedShape"
+    ]);
+    return `${settings.convertedTextColor}:${settings.convertedBackgroundColor}:${settings.convertedShape}`;
+  })).toBe("#ffffff:#111827:pill");
+
+  await popup.close();
+  const reopenedPopup = await openPopupForPage(context, extensionId, shop);
+  await reopenedPopup.getByText("Page options", { exact: true }).click();
+  await expect(reopenedPopup.getByRole("textbox", { name: "Text color hex value" })).toHaveValue("#FFFFFF");
+  await expect(reopenedPopup.getByRole("textbox", { name: "Background color hex value" })).toHaveValue("#111827");
+  await expect(reopenedPopup.getByRole("radio", { name: "Pill" })).toBeChecked();
+
+  await expect(convertedBadge).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(convertedBadge).toHaveCSS("background-color", "rgb(17, 24, 39)");
+  await expect(convertedBadge).toHaveAttribute("data-ccp-shape", "pill");
+  await expect(shadowBadge).toHaveAttribute("data-ccp-shape", "pill");
+
+  await reopenedPopup.getByLabel("Price display").selectOption("replace");
+  await expect(shop.locator("#shadow-price .ccp-original")).toHaveCSS("display", "none");
+
+  await reopenedPopup.getByRole("button", { name: "Reset appearance" }).click();
+  await expect.poll(() => extensionWorker.evaluate(async () => {
+    const settings = await chrome.storage.sync.get([
+      "convertedTextColor",
+      "convertedBackgroundColor",
+      "convertedShape"
+    ]);
+    return `${settings.convertedTextColor}:${settings.convertedBackgroundColor}:${settings.convertedShape}`;
+  })).toBe("#166534:#dcfce7:rounded");
+  await expect(convertedBadge).toHaveCSS("color", "rgb(22, 101, 52)");
+  await expect(shadowBadge).toHaveCSS("background-color", "rgb(220, 252, 231)");
+  await expect(reopenedPopup.getByRole("button", { name: "Reset appearance" })).toBeFocused();
 });
 
 test("real extension popup, injection, dynamic conversion, and undo work together", async ({

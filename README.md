@@ -2,9 +2,9 @@
 
 Currency Converter Pro is a privacy-focused Chrome and Firefox extension that converts prices on shopping pages into a currency you understand.
 
-**Current version:** 1.8.0 · **Platforms:** Chrome and Firefox Manifest V3 · **License:** MIT
+**Current version:** 1.9.1 · **Platforms:** Chrome and Firefox Manifest V3 · **License:** MIT
 
-[![Chrome Web Store](https://img.shields.io/badge/Chrome-Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/) [![Chrome build](https://img.shields.io/badge/Chrome-Build-4285F4?logo=googlechrome&logoColor=white)](release/1.8.0/currency-converter-pro-1.8.0-chrome.zip) [![Firefox build](https://img.shields.io/badge/Firefox-Build-FF7139?logo=firefoxbrowser&logoColor=white)](release/1.8.0/currency-converter-pro-1.8.0-firefox.zip)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome-Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/) [![Chrome build](https://img.shields.io/badge/Chrome-Build-4285F4?logo=googlechrome&logoColor=white)](release/1.9.1/currency-converter-pro-1.9.1-chrome.zip) [![Firefox build](https://img.shields.io/badge/Firefox-Build-FF7139?logo=firefoxbrowser&logoColor=white)](release/1.9.1/currency-converter-pro-1.9.1-firefox.zip)
 
 **[View the complete changelog →](CHANGELOG.md)**
 
@@ -20,6 +20,7 @@ Currency Converter Pro is a privacy-focused Chrome and Firefox extension that co
 - Convert a complete shopping page, one highlighted price, or an amount typed into the popup.
 - Handle prices added later by dynamic and single-page websites.
 - Show converted prices beside the originals or replace them, with exact undo support.
+- Customize converted-price text, background, and corner shape with a live before-and-after preview and contrast guidance.
 - Keep the popup focused on the current site, currency pair, and one adaptive page-conversion action, with less-used controls in closed disclosures.
 - Scan ordinary webpages locally as they open and show the on-page conversion prompt only after a supported price is found.
 - Remember a manual source currency or `AUTO` mode for websites that should convert automatically.
@@ -28,7 +29,7 @@ Currency Converter Pro is a privacy-focused Chrome and Firefox extension that co
 ## Installation
 
 - **Store installation:** Install Currency Converter Pro from the [Chrome Web Store](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) or [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/).
-- **Manual installation:** Download the latest [Chrome build](release/1.8.0/currency-converter-pro-1.8.0-chrome.zip) or [Firefox build](release/1.8.0/currency-converter-pro-1.8.0-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
+- **Manual installation:** Download the latest [Chrome build](release/1.9.1/currency-converter-pro-1.9.1-chrome.zip) or [Firefox build](release/1.9.1/currency-converter-pro-1.9.1-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
 
 ## 🧭 How to use it
 
@@ -41,6 +42,10 @@ Currency Converter Pro is a privacy-focused Chrome and Firefox extension that co
 5. **Restore original prices** appears only after the page contains conversions.
 
 The global **Enable converter** switch is under **Page options**. Turning it off stops local price scanning, prompts, and automatic conversion until the user enables it again.
+
+### Customize converted prices
+
+Open **Page options** and use **Converted price appearance** to choose text and background colors plus a square, rounded, or pill shape. The **Before** sample keeps the original converter style while **After** updates as you edit. The contrast message reports whether the selected colors meet WCAG AA for normal text, and **Reset appearance** restores the accessible green default.
 
 ### Convert a custom amount
 
@@ -178,6 +183,8 @@ The build composes `manifests/base.json` with the selected browser override and 
 
 | Version | Highlights | Download |
 | --- | --- | --- |
+| 1.9.1 | Fixed Chrome and Firefox toolbar popup sizing, scrolling, and browser-native control rendering | [Chrome](release/1.9.1/currency-converter-pro-1.9.1-chrome.zip) · [Firefox](release/1.9.1/currency-converter-pro-1.9.1-firefox.zip) |
+| 1.9.0 | Custom converted-price colors and shapes, live before-and-after preview, WCAG contrast guidance, and one-click reset | [Chrome](release/1.9.0/currency-converter-pro-1.9.0-chrome.zip) · [Firefox](release/1.9.0/currency-converter-pro-1.9.0-firefox.zip) |
 | 1.8.0 | Always-on local price detection, price-gated on-page prompts, background rate prefetching, and instant stale-cache use while rates refresh | [Chrome](release/1.8.0/currency-converter-pro-1.8.0-chrome.zip) · [Firefox](release/1.8.0/currency-converter-pro-1.8.0-firefox.zip) |
 | 1.7.3 | Restored temporary one-time access, exact-origin automatic conversion, a simplified one-action popup, and a visible privacy reset for 1.7.0–1.7.2 upgrades | [Chrome](release/1.7.3/currency-converter-pro-1.7.3-chrome.zip) · [Firefox](release/1.7.3/currency-converter-pro-1.7.3-firefox.zip) |
 | 1.6.2 | Complete Allegro split-decimal prices, duplicate prevention, and stricter product-title filtering | [Chrome](release/1.6.2/currency-converter-pro-1.6.2-chrome.zip) · [Firefox](release/1.6.2/currency-converter-pro-1.6.2-firefox.zip) |

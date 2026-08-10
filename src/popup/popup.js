@@ -8,6 +8,15 @@ const fromCurrencyList = document.getElementById("fromCurrencyList");
 const toCurrencyList = document.getElementById("toCurrencyList");
 const swapButton = document.getElementById("swapCurrencies");
 const displayModeSelect = document.getElementById("displayMode");
+const convertedTextColorInput = document.getElementById("convertedTextColor");
+const convertedTextColorHexInput = document.getElementById("convertedTextColorHex");
+const convertedBackgroundColorInput = document.getElementById("convertedBackgroundColor");
+const convertedBackgroundColorHexInput = document.getElementById("convertedBackgroundColorHex");
+const convertedShapeInputs = [...document.querySelectorAll("input[name='convertedShape']")];
+const appearancePreviewNode = document.getElementById("appearancePreview");
+const appearanceContrastNode = document.getElementById("appearanceContrast");
+const appearanceAnnouncementNode = document.getElementById("appearanceAnnouncement");
+const resetAppearanceButton = document.getElementById("resetAppearance");
 const showPagePromptInput = document.getElementById("showPagePrompt");
 const rememberSiteInput = document.getElementById("rememberSite");
 const rememberSiteHelpNode = document.getElementById("rememberSiteHelp");
@@ -29,6 +38,17 @@ const quickSourceRequiredNode = document.getElementById("quickSourceRequired");
 const chooseQuickSourceButton = document.getElementById("chooseQuickSource");
 const currencyNames = new Intl.DisplayNames([navigator.language || "en"], { type: "currency" });
 const M = CurrencyMessages;
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const DEFAULT_APPEARANCE = Object.freeze({
+  convertedTextColor: "#166534",
+  convertedBackgroundColor: "#dcfce7",
+  convertedShape: "rounded"
+});
+const SHAPE_RADII = Object.freeze({
+  square: "0",
+  rounded: "0.35em",
+  pill: "999px"
+});
 const CONTENT_SCRIPT_FILES = [
   "/shared/browser-api.js", "/shared/currencies.js", "/shared/messages.js", "/content/number-parser.js",
   "/content/detector.js", "/content/converter.js", "/content/page-ui.js", "/content/content.js"
@@ -44,6 +64,7 @@ let availableQuoteCurrencies = null;
 let availableRatesSource = null;
 let catalogWarning = null;
 let quickConversionTimer = null;
+let appearanceAnnouncementTimer = null;
 let quickConversionRequestId = 0;
 let pageConversionError = null;
 let primaryActionBusy = false;
@@ -51,6 +72,7 @@ let popupReady = false;
 let popupLocked = false;
 let confirmedSettings = null;
 let settingsWriteRevision = 0;
+let settingsDraftRevision = 0;
 let latestSettingsWrite = Promise.resolve(true);
 let latestDispatchedSettingsWrite = Promise.resolve(null);
 const defaultRememberSiteHelp = rememberSiteHelpNode.textContent;
@@ -95,6 +117,7 @@ async function initialize() {
   toCurrencySelect.value = settings.toCurrency;
   syncCurrencyComboboxes();
   displayModeSelect.value = settings.displayMode;
+  applyAppearanceSettings(settings, { announce: false });
   showPagePromptInput.checked = settings.showPagePrompt;
   siteStatus = statusResult;
   rememberSiteInput.checked = Boolean(statusResult?.remembered);
@@ -139,6 +162,7 @@ async function initialize() {
   fromCurrencySelect.addEventListener("change", () => saveSettings());
   toCurrencySelect.addEventListener("change", () => saveSettings());
   displayModeSelect.addEventListener("change", () => saveSettings());
+  bindAppearanceControls();
   showPagePromptInput.addEventListener("change", () => saveSettings());
   swapButton.addEventListener("click", swapCurrencies);
   rememberSiteInput.addEventListener("change", handleRememberSiteChange);
@@ -331,8 +355,172 @@ function syncCurrencyComboboxes() {
   currencyComboboxes.forEach(syncCurrencyCombobox);
 }
 
+function bindAppearanceControls() {
+  bindColorControl(convertedTextColorInput, convertedTextColorHexInput);
+  bindColorControl(convertedBackgroundColorInput, convertedBackgroundColorHexInput);
+  for (const input of convertedShapeInputs) {
+    input.addEventListener("change", () => {
+      updateAppearancePreview();
+      saveSettings();
+    });
+  }
+  resetAppearanceButton.addEventListener("click", () => {
+    applyAppearanceSettings(DEFAULT_APPEARANCE);
+    saveSettings();
+  });
+}
+
+function bindColorControl(colorInput, hexInput) {
+  colorInput.addEventListener("input", () => {
+    markSettingsDraft();
+    hexInput.value = colorInput.value.toUpperCase();
+    clearHexColorError(hexInput);
+    updateAppearancePreview();
+  });
+  colorInput.addEventListener("change", () => saveSettings());
+  hexInput.addEventListener("input", () => {
+    markSettingsDraft();
+    const color = normalizeHexColor(hexInput.value);
+    if (!color) {
+      hexInput.setAttribute("aria-invalid", "true");
+      return;
+    }
+    clearHexColorError(hexInput);
+    colorInput.value = color;
+    updateAppearancePreview();
+  });
+  hexInput.addEventListener("change", () => {
+    const color = normalizeHexColor(hexInput.value);
+    if (!color) {
+      hexInput.setAttribute("aria-invalid", "true");
+      hexInput.setCustomValidity("Enter a six-digit hex color, for example #166534.");
+      setStatus("Use a six-digit hex color such as #166534.", "error");
+      return;
+    }
+    clearHexColorError(hexInput);
+    colorInput.value = color;
+    hexInput.value = color.toUpperCase();
+    updateAppearancePreview();
+    saveSettings();
+  });
+}
+
+function clearHexColorError(input) {
+  input.removeAttribute("aria-invalid");
+  input.setCustomValidity("");
+}
+
+function markSettingsDraft() {
+  settingsDraftRevision += 1;
+}
+
+function normalizeHexColor(value) {
+  const candidate = String(value || "").trim();
+  return HEX_COLOR_PATTERN.test(candidate) ? candidate.toLowerCase() : null;
+}
+
+function selectedConvertedShape() {
+  return convertedShapeInputs.find((input) => input.checked)?.value ||
+    DEFAULT_APPEARANCE.convertedShape;
+}
+
+function applyAppearanceSettings(settings, { announce = true } = {}) {
+  const textColor = normalizeHexColor(settings?.convertedTextColor) ||
+    DEFAULT_APPEARANCE.convertedTextColor;
+  const backgroundColor = normalizeHexColor(settings?.convertedBackgroundColor) ||
+    DEFAULT_APPEARANCE.convertedBackgroundColor;
+  const shape = Object.hasOwn(SHAPE_RADII, settings?.convertedShape)
+    ? settings.convertedShape
+    : DEFAULT_APPEARANCE.convertedShape;
+
+  convertedTextColorInput.value = textColor;
+  convertedTextColorHexInput.value = textColor.toUpperCase();
+  convertedBackgroundColorInput.value = backgroundColor;
+  convertedBackgroundColorHexInput.value = backgroundColor.toUpperCase();
+  clearHexColorError(convertedTextColorHexInput);
+  clearHexColorError(convertedBackgroundColorHexInput);
+  for (const input of convertedShapeInputs) input.checked = input.value === shape;
+  updateAppearancePreview({ announce });
+}
+
+function updateAppearancePreview({ announce = true } = {}) {
+  const textColor = normalizeHexColor(convertedTextColorInput.value) ||
+    DEFAULT_APPEARANCE.convertedTextColor;
+  const backgroundColor = normalizeHexColor(convertedBackgroundColorInput.value) ||
+    DEFAULT_APPEARANCE.convertedBackgroundColor;
+  const shape = selectedConvertedShape();
+  const radius = SHAPE_RADII[shape] || SHAPE_RADII.rounded;
+
+  appearancePreviewNode.style.color = textColor;
+  appearancePreviewNode.style.backgroundColor = backgroundColor;
+  appearancePreviewNode.style.borderRadius = radius;
+  appearancePreviewNode.setAttribute(
+    "aria-label",
+    `After preview: approximately 90 euros, with ${textColor.toUpperCase()} text on a ${backgroundColor.toUpperCase()} background and ${shape} corners.`
+  );
+
+  const contrast = colorContrastRatio(textColor, backgroundColor);
+  const result = describeContrast(contrast);
+  appearanceContrastNode.dataset.kind = result.kind;
+  appearanceContrastNode.textContent = result.text;
+  updateAppearanceResetState();
+  if (announce) {
+    scheduleAppearanceAnnouncement(
+      `Preview updated to ${shape} corners with ${textColor.toUpperCase()} text and ${backgroundColor.toUpperCase()} background. ${result.text}`
+    );
+  }
+}
+
+function describeContrast(contrast) {
+  const ratio = contrast.toFixed(2);
+  if (contrast >= 7) {
+    return { kind: "pass", text: `Contrast ${ratio}:1 — passes WCAG AAA for normal text.` };
+  }
+  if (contrast >= 4.5) {
+    return { kind: "pass", text: `Contrast ${ratio}:1 — passes WCAG AA for normal text.` };
+  }
+  if (contrast >= 3) {
+    return {
+      kind: "warning",
+      text: `Contrast ${ratio}:1 — too low for normal text; aim for at least 4.5:1.`
+    };
+  }
+  return {
+    kind: "fail",
+    text: `Contrast ${ratio}:1 — fails WCAG AA; choose colors with more separation.`
+  };
+}
+
+function colorContrastRatio(first, second) {
+  const firstLuminance = colorLuminance(first);
+  const secondLuminance = colorLuminance(second);
+  const lighter = Math.max(firstLuminance, secondLuminance);
+  const darker = Math.min(firstLuminance, secondLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function colorLuminance(color) {
+  const channels = color.slice(1).match(/.{2}/g).map((channel) => parseInt(channel, 16) / 255);
+  const [red, green, blue] = channels.map((channel) => channel <= 0.04045
+    ? channel / 12.92
+    : ((channel + 0.055) / 1.055) ** 2.4);
+  return (0.2126 * red) + (0.7152 * green) + (0.0722 * blue);
+}
+
+function scheduleAppearanceAnnouncement(message) {
+  window.clearTimeout(appearanceAnnouncementTimer);
+  appearanceAnnouncementTimer = window.setTimeout(() => {
+    appearanceAnnouncementNode.textContent = message;
+  }, 300);
+}
+
+function updateAppearanceResetState() {
+  resetAppearanceButton.disabled = !popupReady || popupLocked;
+}
+
 function saveSettings({ syncPage = true } = {}) {
   const revision = ++settingsWriteRevision;
+  const draftRevision = settingsDraftRevision;
   const payload = readSettingsFromControls();
   const validationError = validateSettingsPayload(payload);
   let outcomePromise;
@@ -343,10 +531,12 @@ function saveSettings({ syncPage = true } = {}) {
     latestDispatchedSettingsWrite = outcomePromise;
   }
   const completion = outcomePromise.then((outcome) => {
-    if (revision !== settingsWriteRevision) return Boolean(outcome?.ok);
+    if (revision !== settingsWriteRevision || draftRevision !== settingsDraftRevision) {
+      return Boolean(outcome?.ok);
+    }
     return settleSettingsOutcome(outcome, payload, { revision, syncPage });
   }).catch((error) => {
-    if (revision === settingsWriteRevision) {
+    if (revision === settingsWriteRevision && draftRevision === settingsDraftRevision) {
       lockPopupInteractions(
         `Settings could not be saved or reloaded. ${errorMessage(error)} Close and reopen the popup to try again.`
       );
@@ -414,6 +604,12 @@ function setPopupInteractivity(enabled) {
     toCurrencySearch,
     swapButton,
     displayModeSelect,
+    convertedTextColorInput,
+    convertedTextColorHexInput,
+    convertedBackgroundColorInput,
+    convertedBackgroundColorHexInput,
+    ...convertedShapeInputs,
+    resetAppearanceButton,
     showPagePromptInput,
     enabledInput,
     quickAmountInput,
@@ -429,6 +625,7 @@ function setPopupInteractivity(enabled) {
   }
   updateSecondaryActions();
   updatePrimaryActionLabel();
+  updateAppearanceResetState();
 }
 
 function readSettingsFromControls() {
@@ -437,6 +634,9 @@ function readSettingsFromControls() {
     fromCurrency: fromCurrencySelect.value,
     toCurrency: toCurrencySelect.value,
     displayMode: displayModeSelect.value,
+    convertedTextColor: convertedTextColorInput.value,
+    convertedBackgroundColor: convertedBackgroundColorInput.value,
+    convertedShape: selectedConvertedShape(),
     showPagePrompt: showPagePromptInput.checked
   };
 }
@@ -447,6 +647,13 @@ function validateSettingsPayload(payload) {
     return "Choose a currency from the suggestion list.";
   }
   if (payload.fromCurrency === payload.toCurrency) return "Choose two different currencies.";
+  if (!normalizeHexColor(payload.convertedTextColor) ||
+      !normalizeHexColor(payload.convertedBackgroundColor)) {
+    return "Use six-digit hex colors such as #166534.";
+  }
+  if (!Object.hasOwn(SHAPE_RADII, payload.convertedShape)) {
+    return "Choose a supported converted-price shape.";
+  }
   return null;
 }
 
@@ -563,6 +770,9 @@ function normalizeSettingsSnapshot(settings) {
       typeof settings.fromCurrency !== "string" ||
       typeof settings.toCurrency !== "string" ||
       typeof settings.displayMode !== "string" ||
+      !normalizeHexColor(settings.convertedTextColor) ||
+      !normalizeHexColor(settings.convertedBackgroundColor) ||
+      !Object.hasOwn(SHAPE_RADII, settings.convertedShape) ||
       typeof settings.showPagePrompt !== "boolean") {
     return null;
   }
@@ -571,6 +781,9 @@ function normalizeSettingsSnapshot(settings) {
     fromCurrency: settings.fromCurrency,
     toCurrency: settings.toCurrency,
     displayMode: settings.displayMode,
+    convertedTextColor: normalizeHexColor(settings.convertedTextColor),
+    convertedBackgroundColor: normalizeHexColor(settings.convertedBackgroundColor),
+    convertedShape: settings.convertedShape,
     showPagePrompt: settings.showPagePrompt
   };
 }
@@ -581,6 +794,9 @@ function settingsSnapshotsMatch(left, right) {
     left.fromCurrency === right.fromCurrency &&
     left.toCurrency === right.toCurrency &&
     left.displayMode === right.displayMode &&
+    left.convertedTextColor === right.convertedTextColor &&
+    left.convertedBackgroundColor === right.convertedBackgroundColor &&
+    left.convertedShape === right.convertedShape &&
     left.showPagePrompt === right.showPagePrompt;
 }
 
@@ -590,6 +806,7 @@ function applySettingsToControls(settings) {
   fromCurrencySelect.value = settings.fromCurrency;
   toCurrencySelect.value = settings.toCurrency;
   displayModeSelect.value = settings.displayMode;
+  applyAppearanceSettings(settings, { announce: false });
   showPagePromptInput.checked = settings.showPagePrompt;
   syncCurrencyComboboxes();
   updatePrimaryActionLabel();

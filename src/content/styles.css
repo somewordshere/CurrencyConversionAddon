@@ -12,11 +12,19 @@ ccp-conversion[data-display-mode="replace"] .ccp-original {
 
 ccp-conversion .ccp-badge {
   display: inline-block;
-  color: #15803d !important;
+  margin-inline-start: 0.28em;
+  padding: 0.08em 0.34em;
+  border-radius: 0.35em;
+  background: #dcfce7 !important;
+  color: #166534 !important;
   font-weight: 700 !important;
   white-space: nowrap;
   transform-origin: left center;
   animation: ccp-converted-value-enter 360ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+ccp-conversion[data-display-mode="replace"] .ccp-badge {
+  margin-inline-start: 0;
 }
 
 .ccp-page-prompt,

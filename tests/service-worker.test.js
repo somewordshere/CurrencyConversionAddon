@@ -69,6 +69,9 @@ test("settings are restricted to supported values", () => {
     fromCurrency: "BTC",
     toCurrency: "DOGE",
     displayMode: "html",
+    convertedTextColor: "green",
+    convertedBackgroundColor: "#12345g",
+    convertedShape: "cloud",
     showPagePrompt: "yes"
   });
   assert.deepEqual(JSON.parse(JSON.stringify(invalid)), {
@@ -76,6 +79,9 @@ test("settings are restricted to supported values", () => {
     fromCurrency: "AUTO",
     toCurrency: "EUR",
     displayMode: "beside",
+    convertedTextColor: "#166534",
+    convertedBackgroundColor: "#dcfce7",
+    convertedShape: "rounded",
     showPagePrompt: true
   });
 
@@ -84,10 +90,16 @@ test("settings are restricted to supported values", () => {
     fromCurrency: "USD",
     toCurrency: "PLN",
     displayMode: "replace",
+    convertedTextColor: "#ABCDEF",
+    convertedBackgroundColor: "#123456",
+    convertedShape: "pill",
     showPagePrompt: false
   });
   assert.equal(valid.enabled, true);
   assert.equal(valid.displayMode, "replace");
+  assert.equal(valid.convertedTextColor, "#abcdef");
+  assert.equal(valid.convertedBackgroundColor, "#123456");
+  assert.equal(valid.convertedShape, "pill");
   assert.equal(valid.showPagePrompt, false);
 
   const providerExpanded = context.sanitizeSettings({

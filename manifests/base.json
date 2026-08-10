@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Currency Converter Pro",
-  "version": "1.8.0",
+  "version": "1.9.1",
   "description": "Detect webpage prices locally and offer fast one-click currency conversion as you browse.",
   "icons": {
     "16": "icons/icon16.png",

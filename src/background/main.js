@@ -3,6 +3,9 @@ const DEFAULT_SETTINGS = Object.freeze({
   fromCurrency: "AUTO",
   toCurrency: "EUR",
   displayMode: "beside",
+  convertedTextColor: "#166534",
+  convertedBackgroundColor: "#dcfce7",
+  convertedShape: "rounded",
   showPagePrompt: true
 });
 const SITE_PREFERENCES_KEY = "autoConvertSites";
@@ -365,10 +368,27 @@ function sanitizeSettings(value, supportedCodes = CurrencyCatalog.CURRENCY_CODES
     displayMode: ["beside", "replace"].includes(value?.displayMode)
       ? value.displayMode
       : DEFAULT_SETTINGS.displayMode,
+    convertedTextColor: sanitizeHexColor(
+      value?.convertedTextColor,
+      DEFAULT_SETTINGS.convertedTextColor
+    ),
+    convertedBackgroundColor: sanitizeHexColor(
+      value?.convertedBackgroundColor,
+      DEFAULT_SETTINGS.convertedBackgroundColor
+    ),
+    convertedShape: ["square", "rounded", "pill"].includes(value?.convertedShape)
+      ? value.convertedShape
+      : DEFAULT_SETTINGS.convertedShape,
     showPagePrompt: typeof value?.showPagePrompt === "boolean"
       ? value.showPagePrompt
       : DEFAULT_SETTINGS.showPagePrompt
   };
+}
+
+function sanitizeHexColor(value, fallback) {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)
+    ? value.toLowerCase()
+    : fallback;
 }
 
 async function setBadge(tabId, count) {
