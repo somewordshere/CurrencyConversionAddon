@@ -77,7 +77,6 @@
   global.CurrencyCatalog = Object.freeze({
     CURRENCY_META,
     CURRENCY_CODES,
-    DETECTION_CURRENCY_CODES: CURRENCY_CODES,
     CONTEXT_REQUIRED_SYMBOLS,
     formatCurrencyAmount
   });

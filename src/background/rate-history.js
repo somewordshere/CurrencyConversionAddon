@@ -57,7 +57,7 @@
       `?from=${toIsoDate(start)}&to=${toIsoDate(end)}` +
       `&base=${encodeURIComponent(baseCurrency)}&quotes=${encodeURIComponent(quoteCurrency)}`;
 
-    const response = await fetchWithTimeout(url);
+    const response = await CurrencyHttp.fetchWithTimeout(url, FETCH_TIMEOUT_MS);
     if (!response.ok) throw new Error(`Could not fetch rate history (${response.status}).`);
     return sanitizeSeries(await response.json());
   }
@@ -132,16 +132,6 @@
 
   function toIsoDate(date) {
     return date.toISOString().slice(0, 10);
-  }
-
-  async function fetchWithTimeout(url) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    try {
-      return await fetch(url, { signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
   }
 
   global.CurrencyRateHistoryService = Object.freeze({

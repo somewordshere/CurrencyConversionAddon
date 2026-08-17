@@ -24,5 +24,10 @@ release/*/*/
 
 # Publish only the screenshots used by the README
 screenshots/*
-!screenshots/current-popup.png
-!screenshots/page-conversion.png
+!screenshots/v2-popup-light.png
+!screenshots/v2-popup-dark.png
+!screenshots/v2-popup-options.png
+!screenshots/v2-inpage-prompt.png
+!screenshots/v2-inpage.png
+!screenshots/v2-inpage-selection.png
+!screenshots/v2-inpage-selection-done.png

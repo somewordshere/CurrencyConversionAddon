@@ -1,5 +1,4 @@
 (function initializeRateService(global) {
-  const { CURRENCY_CODES: FALLBACK_CURRENCY_CODES } = global.CurrencyCatalog;
   const CACHE_KEY = "ratesCache";
   const CACHE_VERSION = 3;
   const FRESH_FOR_MS = 18 * 60 * 60 * 1000;
@@ -12,13 +11,7 @@
   const backgroundRefreshes = new Map();
 
   async function getRates(baseCurrency) {
-    const catalog = await (
-      typeof CurrencyCatalogService.getCachedCurrencies === "function"
-        ? CurrencyCatalogService.getCachedCurrencies()
-        : CurrencyCatalogService.getCurrencies()
-    );
-    CurrencyCatalogService.getCurrencies().catch(() => {});
-    const supportedCodes = catalog.currencies.map((currency) => currency.code);
+    const supportedCodes = await CurrencyCatalogSnapshot.readCodes(CurrencyCatalogService);
     if (!supportedCodes.includes(baseCurrency)) {
       return { ok: false, error: `Unsupported source currency: ${baseCurrency}.` };
     }
@@ -181,7 +174,7 @@
     return { rates: {}, date: null };
   }
 
-  function sanitizeRates(rates, supportedCodes = FALLBACK_CURRENCY_CODES) {
+  function sanitizeRates(rates, supportedCodes) {
     return Object.fromEntries(Object.entries(rates || {}).filter(([currency, rate]) =>
       supportedCodes.includes(currency) && Number.isFinite(rate) && rate > 0
     ));
@@ -191,7 +184,7 @@
     let lastResponse;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        lastResponse = await fetchWithTimeout(url);
+        lastResponse = await CurrencyHttp.fetchWithTimeout(url, FETCH_TIMEOUT_MS);
         if (lastResponse.ok || ![408, 429].includes(lastResponse.status) && lastResponse.status < 500) {
           return lastResponse;
         }
@@ -203,16 +196,6 @@
     return lastResponse;
   }
 
-  async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT_MS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, { signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   global.CurrencyRateService = Object.freeze({
     getRates,
     parseRatesResponse,
@@ -221,6 +204,6 @@
     getCacheAgeMs,
     describeAge,
     fetchWithRetry,
-    fetchWithTimeout
+    fetchWithTimeout: CurrencyHttp.fetchWithTimeout
   });
 })(globalThis);

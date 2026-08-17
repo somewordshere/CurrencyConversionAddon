@@ -41,9 +41,9 @@
     }
     if (areaName === "local") {
       const sourceChanged = changes.siteSourceCurrencies &&
-        siteSourceChangeAffectsCurrentOrigin(changes.siteSourceCurrencies);
+        changeAffectsCurrentOrigin(changes.siteSourceCurrencies);
       const preferenceChanged = changes.autoConvertSites &&
-        sitePreferenceChangeAffectsCurrentOrigin(changes.autoConvertSites);
+        changeAffectsCurrentOrigin(changes.autoConvertSites);
       if (!sourceChanged && !preferenceChanged) return;
       invalidatePendingPageCommands();
       const preferenceRemoved = preferenceChanged &&
@@ -390,12 +390,7 @@
     return /^https?:$/.test(window.location.protocol) ? window.location.origin : window.location.href;
   }
 
-  function siteSourceChangeAffectsCurrentOrigin(change) {
-    const origin = getCurrentOrigin();
-    return change?.oldValue?.[origin] !== change?.newValue?.[origin];
-  }
-
-  function sitePreferenceChangeAffectsCurrentOrigin(change) {
+  function changeAffectsCurrentOrigin(change) {
     const origin = getCurrentOrigin();
     return change?.oldValue?.[origin] !== change?.newValue?.[origin];
   }

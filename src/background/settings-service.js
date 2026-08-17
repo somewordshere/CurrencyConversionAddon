@@ -5,7 +5,8 @@
     rateService,
     currencyCatalog,
     settingsSchema,
-    sitePreferences
+    sitePreferences,
+    catalogSnapshot = global.CurrencyCatalogSnapshot
   }) {
     async function initializeDefaults() {
       const catalog = await resolveService(catalogService, "catalog").getCurrencies();
@@ -127,14 +128,7 @@
     }
 
     async function getCatalogSnapshot() {
-      const service = resolveService(catalogService, "catalog");
-      const catalog = await (
-        typeof service.getCachedCurrencies === "function"
-          ? service.getCachedCurrencies()
-          : service.getCurrencies()
-      );
-      service.getCurrencies().catch(() => {});
-      return catalog;
+      return catalogSnapshot.read(resolveService(catalogService, "catalog"));
     }
 
     return Object.freeze({

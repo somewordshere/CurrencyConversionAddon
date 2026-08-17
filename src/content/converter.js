@@ -363,7 +363,7 @@
   }
 
   function discoveryCurrenciesForTextNode(node) {
-    if (acceptTextNode(node) !== NodeFilter.FILTER_ACCEPT) return [];
+    if (!acceptTextNode(node)) return [];
     return usableDiscoveryCurrencies(CurrencyDetector.findMatchesForContext(
       node.nodeValue,
       node.parentElement,
@@ -485,7 +485,7 @@
     while (walker.nextNode()) {
       scanState.inspected += 1;
       collectSplitCandidateForTextNode(walker.currentNode, splitCandidates);
-      if (acceptTextNode(walker.currentNode) === NodeFilter.FILTER_ACCEPT) {
+      if (acceptTextNode(walker.currentNode)) {
         nodes.add(walker.currentNode);
       }
       if (nodes.size >= MAX_TEXT_NODES_PER_SCAN) return true;
@@ -519,9 +519,12 @@
     }
   }
 
+  // A plain predicate, not a NodeFilter: no TreeWalker here is given a filter
+  // callback, and returning NodeFilter constants meant a rejected node (2) read
+  // as truthy wherever a caller tested the result directly.
   function acceptTextNode(node) {
     if (!node.nodeValue?.trim() || !POSSIBLE_PRICE_TEXT_PATTERN.test(node.nodeValue)) {
-      return NodeFilter.FILTER_REJECT;
+      return false;
     }
     const parent = node.parentElement;
     if (
@@ -534,9 +537,9 @@
       !isRendered(parent) ||
       parent.closest(`${OWNED_SELECTOR}, ${UI_SELECTOR}`)
     ) {
-      return NodeFilter.FILTER_REJECT;
+      return false;
     }
-    return NodeFilter.FILTER_ACCEPT;
+    return true;
   }
 
   function collectSplitPricePlans(roots, discoveredElements = []) {

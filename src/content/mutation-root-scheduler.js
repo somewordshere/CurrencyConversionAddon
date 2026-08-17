@@ -151,10 +151,6 @@
       }
     }
 
-    function pendingCount() {
-      return pendingRoots.size;
-    }
-
     function clearPending() {
       cancelScheduledFlush();
       pendingRoots.clear();
@@ -169,7 +165,6 @@
       stop,
       queue,
       flushNow,
-      pendingCount,
       clearPending,
       discardRecords
     });

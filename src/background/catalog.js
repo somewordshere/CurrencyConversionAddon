@@ -30,7 +30,7 @@
     if (!forceRefresh && isFresh(cache)) return buildResult(cache.currencies, true, false);
 
     try {
-      const response = await fetchWithTimeout(CATALOG_URL);
+      const response = await CurrencyHttp.fetchWithTimeout(CATALOG_URL, FETCH_TIMEOUT_MS);
       if (!response.ok) throw new Error(`Could not refresh currencies (${response.status}).`);
       const currencies = sanitizeCurrencyResponse(await response.json());
       if (currencies.length < 2) throw new Error("The currency provider returned no usable catalog.");
@@ -96,22 +96,12 @@
     return { ok: true, currencies, cached, stale, warning };
   }
 
-  async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT_MS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, { signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   global.CurrencyCatalogService = Object.freeze({
     getCurrencies,
     getCachedCurrencies,
     sanitizeCurrencyResponse,
     buildFallbackCurrencies,
     isFresh,
-    fetchWithTimeout
+    fetchWithTimeout: CurrencyHttp.fetchWithTimeout
   });
 })(globalThis);

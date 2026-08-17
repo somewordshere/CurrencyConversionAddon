@@ -19,6 +19,10 @@ const backgroundPageActions = fs.readFileSync(
   path.join(root, "src/background/page-actions.js"),
   "utf8"
 );
+const contentScriptResources = fs.readFileSync(
+  path.join(root, "src/shared/content-script-resources.js"),
+  "utf8"
+);
 const backgroundRuntime = fs.readdirSync(path.join(root, "src/background"))
   .filter((name) => name.endsWith(".js") && name !== "chrome-worker.js")
   .map((name) => fs.readFileSync(path.join(root, "src/background", name), "utf8"))
@@ -77,8 +81,13 @@ assert.doesNotMatch(
 );
 assert.match(
   backgroundPageActions,
-  /getManifest\(\)\.content_scripts/,
-  "fallback injection must derive its files from the declarative manifest"
+  /contentScriptResources\.createInjector/,
+  "fallback injection must reuse the shared content-script resource module"
+);
+assert.match(
+  contentScriptResources,
+  /manifest\?\.content_scripts/,
+  "content-script resources must derive from the declarative manifest"
 );
 assert.match(
   backgroundRuntime,
@@ -128,8 +137,8 @@ assert.deepEqual(
     "../shared/settings.js",
     "../shared/messages.js",
     "../shared/page-access.js",
+    "../shared/content-script-resources.js",
     "../content/number-parser.js",
-    "content-script-resources.js",
     "settings-controller.js",
     "popup.js"
   ],
@@ -165,13 +174,15 @@ const runtimeFiles = [
   "src/popup/popup.css",
   "src/popup/popup.html",
   "src/popup/popup.js",
-  "src/popup/content-script-resources.js",
   "src/popup/settings-controller.js",
   "src/shared/browser-api.js",
   "src/shared/currencies.js",
   "src/shared/settings.js",
   "src/shared/messages.js",
   "src/shared/page-access.js",
+  "src/shared/content-script-resources.js",
+  "src/background/http.js",
+  "src/background/catalog-snapshot.js",
   "src/icons/icon16.png",
   "src/icons/icon32.png",
   "src/icons/icon48.png",

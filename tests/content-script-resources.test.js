@@ -5,12 +5,12 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(
-  path.resolve(__dirname, "../src/popup/content-script-resources.js"),
+  path.resolve(__dirname, "../src/shared/content-script-resources.js"),
   "utf8"
 );
 const context = vm.createContext({});
-vm.runInContext(source, context, { filename: "src/popup/content-script-resources.js" });
-const { fromManifest } = context.CurrencyPopupContentScriptResources;
+vm.runInContext(source, context, { filename: "src/shared/content-script-resources.js" });
+const { fromManifest } = context.CurrencyContentScriptResources;
 const baseManifest = JSON.parse(fs.readFileSync(
   path.resolve(__dirname, "../manifests/base.json"),
   "utf8"

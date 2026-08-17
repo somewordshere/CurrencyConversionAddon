@@ -32,6 +32,10 @@ function createCatalogService({ cache = null, fetchImpl }) {
     }
   });
   vm.runInContext(
+    fs.readFileSync(path.resolve(__dirname, "../src/background/http.js"), "utf8"),
+    context
+  );
+  vm.runInContext(
     fs.readFileSync(path.resolve(__dirname, "../src/background/catalog.js"), "utf8"),
     context
   );

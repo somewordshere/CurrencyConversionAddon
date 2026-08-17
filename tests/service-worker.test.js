@@ -481,13 +481,8 @@ test("site status reflects an automatic-conversion preference without permission
     ok: true,
     origin,
     pattern: `${origin}/*`,
-    hasPermission: true,
-    requiresPermission: false,
-    revocablePermission: false,
     remembered: true,
-    registrationRemaining: false,
-    dataRemaining: true,
-    cleanupRequired: false
+    dataRemaining: true
   });
 });
 
@@ -743,8 +738,6 @@ test("remember setup rolls back an uncertain local-storage write", async () => {
 
   assert.equal(result.ok, false);
   assert.equal(result.remembered, false);
-  assert.equal(result.permissionRemaining, false);
-  assert.equal(result.registrationRemaining, false);
   assert.equal(result.dataRemaining, false);
   assert.match(result.error, /site setting was rolled back/);
   assert.deepEqual(background.localStore.autoConvertSites, {});
@@ -801,8 +794,6 @@ test("remember rollback reports saved data that could not be removed", async () 
 
   assert.equal(result.ok, false);
   assert.equal(result.remembered, true);
-  assert.equal(result.permissionRemaining, false);
-  assert.equal(result.registrationRemaining, false);
   assert.equal(result.dataRemaining, true);
   assert.match(result.error, /Some saved site data remains/);
 });
@@ -850,7 +841,6 @@ test("forgetting a site deletes only its saved preference and source mode", asyn
 
   assert.equal(result.ok, true);
   assert.equal(result.remembered, false);
-  assert.equal(result.permissionRemaining, false);
   assert.deepEqual(background.localStore.autoConvertSites, { [otherOrigin]: true });
   assert.deepEqual(background.localStore.siteSourceCurrencies, { [otherOrigin]: "EUR" });
 });
@@ -871,8 +861,6 @@ test("forget failure reports saved data that remains", async () => {
 
   assert.equal(result.ok, false);
   assert.equal(result.remembered, true);
-  assert.equal(result.permissionRemaining, false);
-  assert.equal(result.registrationRemaining, false);
   assert.equal(result.dataRemaining, true);
   assert.match(result.error, /remaining: saved site data/);
 });

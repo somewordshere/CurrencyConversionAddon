@@ -32,6 +32,14 @@ function createRateService({ cache, fetchImpl }) {
     }
   });
   vm.runInContext(
+    fs.readFileSync(path.resolve(__dirname, "../src/background/http.js"), "utf8"),
+    context
+  );
+  vm.runInContext(
+    fs.readFileSync(path.resolve(__dirname, "../src/background/catalog-snapshot.js"), "utf8"),
+    context
+  );
+  vm.runInContext(
     fs.readFileSync(path.resolve(__dirname, "../src/background/rates.js"), "utf8"),
     context
   );

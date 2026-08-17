@@ -1,10 +1,10 @@
 (function initializePageActions(global) {
-  function createPageActions({ api, messages }) {
-    const declaration = api.runtime.getManifest().content_scripts?.find((script) =>
-      script.matches?.includes("http://*/*") && script.matches?.includes("https://*/*")
-    );
-    const injectedScriptFiles = (declaration?.js || []).map((file) => `/${file}`);
-    const injectedStyleFiles = (declaration?.css || []).map((file) => `/${file}`);
+  function createPageActions({
+    api,
+    messages,
+    contentScriptResources = global.CurrencyContentScriptResources
+  }) {
+    const ensureContentScripts = contentScriptResources.createInjector({ api, messages });
 
     async function initializeContextMenu() {
       await api.contextMenus.removeAll();
@@ -50,22 +50,6 @@
 
     function isSupportedTab(tab) {
       return Boolean(tab?.id && tab.url && /^(https?|file):\/\//.test(tab.url));
-    }
-
-    async function ensureContentScripts(tabId) {
-      try {
-        await api.tabs.sendMessage(tabId, { type: messages.CONTENT_READY });
-        return;
-      } catch (_error) {
-        await api.scripting.insertCSS({
-          target: { tabId },
-          files: injectedStyleFiles
-        });
-        await api.scripting.executeScript({
-          target: { tabId },
-          files: injectedScriptFiles
-        });
-      }
     }
 
     return Object.freeze({

@@ -4,6 +4,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
+const HTTP_SOURCE = fs.readFileSync(
+  path.resolve(__dirname, "../src/background/http.js"),
+  "utf8"
+);
 const SOURCE = fs.readFileSync(
   path.resolve(__dirname, "../src/background/rate-history.js"),
   "utf8"
@@ -32,6 +36,7 @@ function loadService({ fetchImpl, store = {} } = {}) {
   };
   context.globalThis = context;
   vm.createContext(context);
+  vm.runInContext(HTTP_SOURCE, context, { filename: "src/background/http.js" });
   vm.runInContext(SOURCE, context, { filename: "src/background/rate-history.js" });
   return { service: context.CurrencyRateHistoryService, local };
 }

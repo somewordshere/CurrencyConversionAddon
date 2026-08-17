@@ -99,12 +99,10 @@
     }
 
     for (const group of SYMBOL_GROUPS) {
-      if (!group.markers.some((marker) => lowerText.includes(marker.toLocaleLowerCase()))) {
+      if (!group.lowerMarkers.some((marker) => lowerText.includes(marker))) {
         continue;
       }
-      const needsContext = group.markers.some((marker) =>
-        CONTEXT_REQUIRED_SYMBOLS.has(marker.toLocaleLowerCase())
-      );
+      const needsContext = group.needsContext;
       let currency =
         group.currencies.length === 1 && !needsContext
           ? group.currencies[0]
@@ -478,8 +476,11 @@
     for (const [currency, meta] of Object.entries(CURRENCY_META)) {
       for (const symbol of meta.symbols) {
         const key = symbol.toLocaleLowerCase();
-        const group = groups.get(key) || { markers: [], currencies: [] };
+        const group = groups.get(key) ||
+          { markers: [], lowerMarkers: [], currencies: [], needsContext: false };
         group.markers.push(symbol);
+        group.lowerMarkers.push(key);
+        group.needsContext ||= CONTEXT_REQUIRED_SYMBOLS.has(key);
         if (!group.currencies.includes(currency)) group.currencies.push(currency);
         groups.set(key, group);
       }

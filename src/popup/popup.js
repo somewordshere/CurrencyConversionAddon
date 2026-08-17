@@ -54,9 +54,10 @@ const rateSparkPointNode = document.getElementById("rateSparkPoint");
 const rateSparkTitleNode = document.getElementById("rateSparkTitle");
 const currencyNames = new Intl.DisplayNames([navigator.language || "en"], { type: "currency" });
 const M = CurrencyMessages;
-const contentScriptResources = CurrencyPopupContentScriptResources.fromManifest(
-  ExtensionAPI.runtime.getManifest()
-);
+const ensureContentScripts = CurrencyContentScriptResources.createInjector({
+  api: ExtensionAPI,
+  messages: M
+});
 let activeTab = null;
 let siteStatus = null;
 let lastDetectedCurrency = null;
@@ -146,7 +147,9 @@ async function initialize() {
       ? `Converts prices automatically on ${activeHostname}. Price scanning stays on this device.`
       : defaultRememberSiteHelp
     : statusResult?.error || "This page cannot be remembered.";
-  clearSiteButton.hidden = !statusResult?.cleanupRequired;
+  // Leftover site data is only ever discovered by a failed remember/forget in
+  // this popup session; a freshly opened popup never has cleanup pending.
+  clearSiteButton.hidden = true;
   let badgeText = "";
   if (activeTab?.id) {
     try {
@@ -353,7 +356,6 @@ function renderSparkline(history, baseCurrency, quoteCurrency) {
 function formatRateValue(rate) {
   if (!Number.isFinite(rate)) return "—";
   if (rate >= 1000) return rate.toFixed(1);
-  if (rate >= 1) return rate.toFixed(4);
   if (rate >= 0.001) return rate.toFixed(4);
   return rate.toPrecision(3);
 }
@@ -890,9 +892,7 @@ async function handleRememberSiteChange() {
       if (!result?.ok) {
         setupFailureState = result;
         siteStatus.remembered = Boolean(result?.remembered);
-        siteStatus.cleanupRequired = Boolean(
-          result?.registrationRemaining || result?.dataRemaining
-        );
+        siteStatus.cleanupRequired = Boolean(result?.dataRemaining);
         throw new Error(result?.error || "Could not remember this site.");
       }
       siteStatus.remembered = true;
@@ -909,9 +909,7 @@ async function handleRememberSiteChange() {
       if (!result?.ok) {
         setupFailureState = result;
         siteStatus.remembered = Boolean(result?.remembered);
-        siteStatus.cleanupRequired = Boolean(
-          result?.registrationRemaining || result?.dataRemaining
-        );
+        siteStatus.cleanupRequired = Boolean(result?.dataRemaining);
         clearSiteButton.hidden = false;
         throw new Error(result?.error || "Could not disable automatic conversion for this site.");
       }
@@ -932,9 +930,7 @@ async function handleRememberSiteChange() {
     }
   } catch (error) {
     clearSiteButton.hidden = !(
-      siteStatus?.cleanupRequired ||
-      setupFailureState?.registrationRemaining ||
-      setupFailureState?.dataRemaining
+      siteStatus?.cleanupRequired || setupFailureState?.dataRemaining
     );
     rememberSiteInput.checked = Boolean(siteStatus?.remembered);
     setStatus(error.message, "error");
@@ -1306,38 +1302,6 @@ async function sendToActivePage(type, payload = {}) {
   } catch (error) {
     console.error("Currency Converter Pro could not reach the active page.", error);
     return { ok: false, error: CurrencyPageAccess.describeFailure(activeTab, error) };
-  }
-}
-
-async function ensureContentScripts(tabId) {
-  try {
-    await ExtensionAPI.tabs.sendMessage(tabId, { type: M.CONTENT_READY });
-    return;
-  } catch (_error) {
-    // The converter is not loaded in this document yet.
-  }
-
-  if (contentScriptResources.css.length) {
-    try {
-      await ExtensionAPI.scripting.insertCSS({
-        target: { tabId },
-        files: contentScriptResources.css
-      });
-    } catch (error) {
-      throw new Error(`The page styles could not be loaded: ${errorMessage(error)}`);
-    }
-  }
-
-  try {
-    if (!contentScriptResources.js.length) {
-      throw new Error("The extension manifest does not define page converter scripts.");
-    }
-    await ExtensionAPI.scripting.executeScript({
-      target: { tabId },
-      files: contentScriptResources.js
-    });
-  } catch (error) {
-    throw new Error(`The page converter could not be loaded: ${errorMessage(error)}`);
   }
 }
 

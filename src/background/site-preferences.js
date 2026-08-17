@@ -3,7 +3,8 @@
     api,
     pageAccess,
     catalogService,
-    settingsSchema
+    settingsSchema,
+    catalogSnapshot = global.CurrencyCatalogSnapshot
   }) {
     const SITE_PREFERENCES_KEY = "autoConvertSites";
     const SITE_SOURCE_CURRENCIES_KEY = "siteSourceCurrencies";
@@ -45,13 +46,8 @@
         ok: true,
         origin: site.origin,
         pattern: site.pattern,
-        hasPermission: true,
-        requiresPermission: false,
-        revocablePermission: false,
         remembered: preferencePresent,
-        registrationRemaining: false,
-        dataRemaining: preferencePresent || sourcePresent,
-        cleanupRequired: false
+        dataRemaining: preferencePresent || sourcePresent
       };
     }
 
@@ -86,8 +82,6 @@
         return {
           ok: false,
           remembered: state.remembered,
-          permissionRemaining: false,
-          registrationRemaining: false,
           dataRemaining: state.preferenceRemaining || state.sourceRemaining,
           origin: site.origin,
           error: state.clean
@@ -126,8 +120,6 @@
         return {
           ok: false,
           remembered: state.remembered,
-          permissionRemaining: false,
-          registrationRemaining: false,
           dataRemaining: state.preferenceRemaining || state.sourceRemaining,
           origin: site.origin,
           error: `Site-access cleanup is incomplete${remaining}. Try turning automatic conversion off again.${
@@ -138,7 +130,6 @@
       return {
         ok: true,
         remembered: false,
-        permissionRemaining: false,
         origin: site.origin
       };
     }
@@ -312,13 +303,7 @@
     }
 
     async function loadSupportedCodes() {
-      const catalog = await (
-        typeof catalogService.getCachedCurrencies === "function"
-          ? catalogService.getCachedCurrencies()
-          : catalogService.getCurrencies()
-      );
-      catalogService.getCurrencies().catch(() => {});
-      return catalog.currencies.map((currency) => currency.code);
+      return catalogSnapshot.readCodes(catalogService);
     }
 
     async function cleanupLegacyArtifacts() {

@@ -10,9 +10,25 @@ Currency Converter Pro is a privacy-focused Chrome and Firefox extension that co
 
 ## 📸 Screenshots
 
-| Current popup and page conversion | Converted price on a shopping page |
+### The popup
+
+| Live rate and conversion | Dark mode | Page options |
+| --- | --- | --- |
+| ![Currency Converter Pro popup showing a live USD to EUR rate, a currency pair selector, and a quick amount converter](screenshots/v2-popup-light.png) | ![The same popup rendered in dark mode](screenshots/v2-popup-dark.png) | ![The popup with Page options expanded, showing the converter toggle, price display mode, and converted-price appearance controls](screenshots/v2-popup-options.png) |
+
+### On the page
+
+Prices are detected locally as a page opens. The prompt appears only once a supported price is found, and it states the rate before you accept.
+
+| Conversion offered | Whole page converted |
 | --- | --- |
-| ![Currency Converter Pro popup converting Amazon prices](screenshots/current-popup.png) | ![A shopping page with prices converted by Currency Converter Pro](screenshots/page-conversion.png) |
+| ![A shopping page with a prompt offering to convert visible prices to EUR, showing the current rate](screenshots/v2-inpage-prompt.png) | ![The same shopping page with every price showing its euro equivalent beside the original, and a toast offering undo](screenshots/v2-inpage.png) |
+
+Or select a single price to convert just that one:
+
+| Select any price | Converted in place |
+| --- | --- |
+| ![A single highlighted price with a Convert selection button beside it](screenshots/v2-inpage-selection.png) | ![The same selection showing the converted euro amount](screenshots/v2-inpage-selection-done.png) |
 
 ## Features
 
@@ -204,16 +220,16 @@ See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
 
 ```text
 src/          Shared extension runtime used by both browsers
-  background/ Listener/router entry plus settings, site-preference, page-action, catalog, and rate services
+  background/ Listener/router entry plus settings, site-preference, page-action, catalog, and rate services, over shared HTTP and catalog-snapshot helpers
   content/    Detection and conversion runtime, conversion registry, bounded mutation scheduler, and page UI
   icons/      Extension icons
-  popup/      Popup UI, settings reconciliation controller, and manifest-derived fallback resources
-  shared/     Browser adapter, currency catalog, canonical settings schema, messages, and page-access rules
+  popup/      Popup UI and settings reconciliation controller
+  shared/     Browser adapter, currency catalog, canonical settings schema, messages, page-access rules, and manifest-derived content-script injection
 manifests/    Common manifest plus Chrome and Firefox overrides
 dist/         Generated unpacked browser builds (not committed)
 release/      Versioned Chrome and Firefox release archives
 screenshots/  Images used by this README
-scripts/      Manifest composition, validation, icon, and release utilities
+scripts/      Manifest composition, validation, icon, screenshot, and release utilities
 tests/        Unit, integration, fixture, Chrome Playwright, and Firefox runtime tests
 ```
 
