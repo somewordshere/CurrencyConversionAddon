@@ -76,15 +76,20 @@ test("capture selection bubble", async ({ context, extensionWorker }) => {
   const right = await shop.locator(".card").nth(3).boundingBox();
   const top = await shop.locator(".thumb").first().boundingBox();
   const pad = 14;
-  await shop.screenshot({
-    path: path.join(OUT, "v2-inpage-selection.png"),
-    clip: {
-      x: left.x - pad,
-      y: top.y - pad,
-      width: (right.x + right.width + pad) - (left.x - pad),
-      height: (bubble.y + bubble.height + pad) - (top.y - pad)
-    }
-  });
+  const clip = {
+    x: left.x - pad,
+    y: top.y - pad,
+    width: (right.x + right.width + pad) - (left.x - pad),
+    height: (bubble.y + bubble.height + pad) - (top.y - pad)
+  };
+  await shop.screenshot({ path: path.join(OUT, "v2-inpage-selection.png"), clip });
+
+  // The same frame after the bubble is used: the selection stays highlighted and
+  // the bubble carries the converted figure instead of a generic verb.
+  await shop.locator(".ccp-selection-popup").click();
+  await shop.locator('.ccp-selection-popup[data-state="success"]').waitFor();
+  await shop.waitForTimeout(300);
+  await shop.screenshot({ path: path.join(OUT, "v2-inpage-selection-done.png"), clip });
 });
 
 test("capture in-page surfaces", async ({ context, extensionWorker }) => {

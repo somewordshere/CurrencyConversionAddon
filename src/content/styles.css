@@ -224,12 +224,14 @@ ccp-conversion[data-display-mode="replace"] .ccp-badge {
   border-color: #fca5a5;
 }
 
+/* The converted-price green, not the teal "a check passed" colour: this bubble
+   is showing a converted price, the same thing the inline badges show. */
 .ccp-selection-popup[data-state="success"] {
-  background: #0f766e;
+  background: #166534;
 }
 
 .ccp-selection-popup[data-state="error"] {
-  background: #b91c1c;
+  background: #b3261e;
 }
 
 .ccp-page-prompt-close:focus-visible,

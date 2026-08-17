@@ -44,10 +44,10 @@ const TILES = [
   },
   {
     file: "04-select-price.png",
-    source: "v2-inpage-selection.png",
+    source: "v2-inpage-selection-done.png",
     kicker: "One price at a time",
     headline: "Highlight a price to convert it",
-    body: "Select any price and a converter appears right beside it. Nothing else on the page is touched.",
+    body: "Select any price and the converted amount appears right beside it. Nothing else on the page is touched.",
     shotWidth: 760
   }
 ];
