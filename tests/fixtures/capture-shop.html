@@ -25,12 +25,29 @@
         gap: 30px 26px; max-width: 1120px;
       }
       .card { display: flex; flex-direction: column; gap: 9px; }
-      .thumb { height: 168px; border-radius: 4px; background: linear-gradient(140deg, #e9eaee, #d6d8df); }
+      .thumb {
+        display: grid; place-items: center;
+        height: 168px; border-radius: 4px; overflow: hidden;
+        background: linear-gradient(140deg, #e9eaee, #d6d8df);
+      }
       .thumb.b { background: linear-gradient(140deg, #e4e9ee, #cfd8e0); }
       .thumb.c { background: linear-gradient(140deg, #ede9e4, #dcd5cb); }
       .thumb.d { background: linear-gradient(140deg, #e7ebe7, #d2dad2); }
       .thumb.e { background: linear-gradient(140deg, #efe9ec, #dcd0d7); }
       .thumb.f { background: linear-gradient(140deg, #e8ecef, #d3dade); }
+      /* Abstract stand-ins for product photography: geometric, obviously not
+         photographs, and self-contained so the fixture needs no binary assets. */
+      .obj { width: 68%; height: 68%; display: block; }
+      .obj .body { fill: #9aa0ad; }
+      .obj .hi { fill: #fff; opacity: .38; }
+      .obj .sh { fill: #000; opacity: .07; }
+      .obj .handle { fill: none; stroke: #9aa0ad; stroke-width: 7; }
+      .thumb.b .obj .body { fill: #8fa2b0; }
+      .thumb.c .obj .body { fill: #b3a693; }
+      .thumb.d .obj .body { fill: #93a793; }
+      .thumb.e .obj .body { fill: #ab97a1; }
+      .thumb.e .obj .handle { stroke: #ab97a1; }
+      .thumb.f .obj .body { fill: #8e9ba5; }
       .name { font-size: 14.5px; line-height: 1.35; }
       .meta { font-size: 12.5px; color: #85858f; }
       .price { font-size: 16px; font-weight: 650; }
@@ -46,37 +63,86 @@
       <p class="sub">Made in small batches. Ships worldwide.</p>
       <div class="grid">
         <div class="card">
-          <div class="thumb"></div>
+          <div class="thumb">
+            <svg class="obj" viewBox="0 0 100 100" aria-hidden="true">
+              <ellipse class="sh" cx="50" cy="92" rx="26" ry="4"/>
+              <path class="body" d="M43 10h14v13c0 5 13 11 13 27v32a10 10 0 0 1-10 10H40a10 10 0 0 1-10-10V50c0-16 13-22 13-27z"/>
+              <path class="hi" d="M38 44c-2 4-3 8-3 12v30a4 4 0 0 0 4 4h2V44z"/>
+            </svg>
+          </div>
           <span class="name">Stoneware carafe, 1.2&nbsp;L</span>
           <span class="meta">Matte oatmeal</span>
           <span class="price" id="p1">$68.00</span>
         </div>
         <div class="card">
-          <div class="thumb b"></div>
+          <div class="thumb b">
+            <svg class="obj" viewBox="0 0 100 100" aria-hidden="true">
+              <ellipse class="sh" cx="52" cy="80" rx="32" ry="4"/>
+              <rect class="body" x="24" y="34" width="62" height="40" rx="20"/>
+              <ellipse class="body" cx="24" cy="54" rx="13" ry="20"/>
+              <ellipse class="hi" cx="24" cy="54" rx="8" ry="12"/>
+              <ellipse class="sh" cx="24" cy="54" rx="3" ry="5"/>
+            </svg>
+          </div>
           <span class="name">Linen table runner</span>
           <span class="meta">Undyed, 180&nbsp;cm</span>
           <span class="price" id="p2">$42.50</span>
         </div>
         <div class="card">
-          <div class="thumb c"></div>
+          <div class="thumb c">
+            <svg class="obj" viewBox="0 0 100 100" aria-hidden="true">
+              <ellipse class="sh" cx="50" cy="88" rx="36" ry="4"/>
+              <path class="body" d="M12 26h18l-2.5 58h-13z"/>
+              <path class="body" d="M35 20h18l-2.5 64h-13z"/>
+              <path class="body" d="M58 26h18l-2.5 58h-13z"/>
+              <path class="body" d="M79 34h14l-2 50h-10z"/>
+              <path class="hi" d="M14 26h4l-2 58h-3.5z"/>
+              <path class="hi" d="M37 20h4l-2 64h-3.5z"/>
+            </svg>
+          </div>
           <span class="name">Hand-blown tumblers, set of 4</span>
           <span class="meta">Smoke grey</span>
           <span class="price" id="p3">$115.00</span>
         </div>
         <div class="card">
-          <div class="thumb d"></div>
+          <div class="thumb d">
+            <svg class="obj" viewBox="0 0 100 100" aria-hidden="true">
+              <ellipse class="sh" cx="50" cy="82" rx="32" ry="4"/>
+              <path class="body" d="M10 38h80a40 40 0 0 1-80 0z"/>
+              <ellipse class="body" cx="50" cy="38" rx="40" ry="9"/>
+              <ellipse class="hi" cx="50" cy="38" rx="31" ry="6"/>
+            </svg>
+          </div>
           <span class="name">Serving bowl, wide</span>
           <span class="meta">Celadon glaze</span>
           <span class="price" id="p4">$94.00</span>
         </div>
         <div class="card">
-          <div class="thumb e"></div>
+          <div class="thumb e">
+            <svg class="obj" viewBox="0 0 100 100" aria-hidden="true">
+              <ellipse class="sh" cx="50" cy="84" rx="32" ry="4"/>
+              <path class="handle" d="M78 40a11 11 0 0 1 0 20"/>
+              <rect class="body" x="48" y="28" width="32" height="52" rx="7"/>
+              <rect class="hi" x="52" y="32" width="6" height="44" rx="3"/>
+              <path class="handle" d="M44 52a9 9 0 0 1 0 16"/>
+              <rect class="body" x="18" y="42" width="28" height="38" rx="6"/>
+              <rect class="hi" x="22" y="46" width="5" height="30" rx="2.5"/>
+            </svg>
+          </div>
           <span class="name">Stacking mugs, pair</span>
           <span class="meta">Ash white</span>
           <span class="price" id="p5">$36.00</span>
         </div>
         <div class="card">
-          <div class="thumb f"></div>
+          <div class="thumb f">
+            <svg class="obj" viewBox="0 0 100 100" aria-hidden="true">
+              <ellipse class="sh" cx="50" cy="90" rx="30" ry="4"/>
+              <circle class="body" cx="50" cy="50" r="38"/>
+              <circle class="hi" cx="50" cy="50" r="30"/>
+              <circle class="body" cx="50" cy="50" r="22"/>
+              <circle class="hi" cx="50" cy="50" r="10"/>
+            </svg>
+          </div>
           <span class="name">Cast-iron trivet</span>
           <span class="meta">Blackened finish</span>
           <span class="price" id="p6">$28.50</span>
