@@ -12,13 +12,32 @@ const DEFAULT_SETTINGS = Object.freeze(
   JSON.parse(JSON.stringify(settingsContext.CurrencySettings.DEFAULTS))
 );
 
-const CATALOG_SIGNATURE = "AFN,CHF,EUR,PLN,USD";
 const RATE_DATE = "2026-07-10";
+
+// Ordered by code, because that is the only order the extension ever stores: the
+// catalog is written through sanitizeCurrencyResponse, which sorts. Seeding it
+// unsorted made every cached rate read as stale, since the rate cache's
+// catalogSignature is the same list joined — so the fixture silently exercised
+// the stale-rate path instead of the fresh one.
 const PROVIDER_CURRENCIES = Object.freeze([
+  Object.freeze({
+    code: "AFN",
+    name: "Afghan Afghani",
+    symbol: "؋",
+    startDate: "1999-01-01",
+    endDate: RATE_DATE
+  }),
   Object.freeze({
     code: "CHF",
     name: "Swiss Franc",
     symbol: "CHF",
+    startDate: "1999-01-04",
+    endDate: RATE_DATE
+  }),
+  Object.freeze({
+    code: "EUR",
+    name: "Euro",
+    symbol: "€",
     startDate: "1999-01-04",
     endDate: RATE_DATE
   }),
@@ -30,20 +49,6 @@ const PROVIDER_CURRENCIES = Object.freeze([
     endDate: RATE_DATE
   }),
   Object.freeze({
-    code: "AFN",
-    name: "Afghan Afghani",
-    symbol: "؋",
-    startDate: "1999-01-01",
-    endDate: RATE_DATE
-  }),
-  Object.freeze({
-    code: "EUR",
-    name: "Euro",
-    symbol: "€",
-    startDate: "1999-01-04",
-    endDate: RATE_DATE
-  }),
-  Object.freeze({
     code: "USD",
     name: "United States Dollar",
     symbol: "$",
@@ -51,6 +56,8 @@ const PROVIDER_CURRENCIES = Object.freeze([
     endDate: RATE_DATE
   })
 ]);
+
+const CATALOG_SIGNATURE = PROVIDER_CURRENCIES.map((currency) => currency.code).join(",");
 
 const RATES_BY_BASE = Object.freeze({
   USD: Object.freeze({ USD: 1, EUR: 0.9, CHF: 0.8 }),

@@ -22,7 +22,7 @@ const TILES = [
     file: "01-live-rate.png",
     source: "v2-popup-light.png",
     kicker: "Live rate, front and centre",
-    headline: "The rate you are getting, before you convert",
+    headline: "See the rate before you convert",
     body: "Every conversion shows the exact rate, how fresh it is, and the last seven days at a glance.",
     shotWidth: 420
   },
@@ -30,7 +30,7 @@ const TILES = [
     file: "02-on-page.png",
     source: "v2-inpage-prompt.png",
     kicker: "Works where you shop",
-    headline: "Prices convert on the page itself",
+    headline: "Convert prices where you shop",
     body: "One click converts every price in view. The original stays beside it, or is replaced — your choice.",
     shotWidth: 760
   },
@@ -38,7 +38,7 @@ const TILES = [
     file: "03-converted.png",
     source: "v2-inpage.png",
     kicker: "Readable at a glance",
-    headline: "Converted prices you can actually spot",
+    headline: "Converted prices that stand out",
     body: "Style the converted price however you like. Contrast is checked for you as you pick colours.",
     shotWidth: 760
   }

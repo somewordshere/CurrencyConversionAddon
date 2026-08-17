@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Northlight Supply — Ceramics &amp; Textiles</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #fbfbfc;
+        color: #1a1a1f;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      header {
+        display: flex; align-items: center; gap: 28px;
+        padding: 20px 44px; border-bottom: 1px solid #e6e6ea; background: #fff;
+      }
+      .logo { font-size: 17px; font-weight: 700; letter-spacing: -.02em; }
+      nav { display: flex; gap: 22px; font-size: 14px; color: #6b6b76; }
+      main { padding: 34px 44px 60px; }
+      h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -.02em; }
+      .sub { margin: 0 0 30px; color: #6b6b76; font-size: 14.5px; }
+      .grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        gap: 30px 26px; max-width: 1120px;
+      }
+      .card { display: flex; flex-direction: column; gap: 9px; }
+      .thumb { height: 168px; border-radius: 4px; background: linear-gradient(140deg, #e9eaee, #d6d8df); }
+      .thumb.b { background: linear-gradient(140deg, #e4e9ee, #cfd8e0); }
+      .thumb.c { background: linear-gradient(140deg, #ede9e4, #dcd5cb); }
+      .thumb.d { background: linear-gradient(140deg, #e7ebe7, #d2dad2); }
+      .thumb.e { background: linear-gradient(140deg, #efe9ec, #dcd0d7); }
+      .thumb.f { background: linear-gradient(140deg, #e8ecef, #d3dade); }
+      .name { font-size: 14.5px; line-height: 1.35; }
+      .meta { font-size: 12.5px; color: #85858f; }
+      .price { font-size: 16px; font-weight: 650; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="logo">Northlight Supply</span>
+      <nav><span>Ceramics</span><span>Textiles</span><span>Glass</span><span>Kitchen</span></nav>
+    </header>
+    <main>
+      <h1>Studio ceramics</h1>
+      <p class="sub">Made in small batches. Ships worldwide.</p>
+      <div class="grid">
+        <div class="card">
+          <div class="thumb"></div>
+          <span class="name">Stoneware carafe, 1.2&nbsp;L</span>
+          <span class="meta">Matte oatmeal</span>
+          <span class="price" id="p1">$68.00</span>
+        </div>
+        <div class="card">
+          <div class="thumb b"></div>
+          <span class="name">Linen table runner</span>
+          <span class="meta">Undyed, 180&nbsp;cm</span>
+          <span class="price" id="p2">$42.50</span>
+        </div>
+        <div class="card">
+          <div class="thumb c"></div>
+          <span class="name">Hand-blown tumblers, set of 4</span>
+          <span class="meta">Smoke grey</span>
+          <span class="price" id="p3">$115.00</span>
+        </div>
+        <div class="card">
+          <div class="thumb d"></div>
+          <span class="name">Serving bowl, wide</span>
+          <span class="meta">Celadon glaze</span>
+          <span class="price" id="p4">$94.00</span>
+        </div>
+        <div class="card">
+          <div class="thumb e"></div>
+          <span class="name">Stacking mugs, pair</span>
+          <span class="meta">Ash white</span>
+          <span class="price" id="p5">$36.00</span>
+        </div>
+        <div class="card">
+          <div class="thumb f"></div>
+          <span class="name">Cast-iron trivet</span>
+          <span class="meta">Blackened finish</span>
+          <span class="price" id="p6">$28.50</span>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
