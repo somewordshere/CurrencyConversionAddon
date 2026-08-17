@@ -6,6 +6,7 @@ importScripts(
   "../shared/page-access.js",
   "catalog.js",
   "rates.js",
+  "rate-history.js",
   "site-preferences.js",
   "settings-service.js",
   "page-actions.js",

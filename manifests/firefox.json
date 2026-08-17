@@ -8,6 +8,7 @@
       "shared/page-access.js",
       "background/catalog.js",
       "background/rates.js",
+      "background/rate-history.js",
       "background/site-preferences.js",
       "background/settings-service.js",
       "background/page-actions.js",

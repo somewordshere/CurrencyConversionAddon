@@ -34,10 +34,25 @@ async function stubRateProvider(extensionWorker) {
         })));
       }
       if (url.includes("api.frankfurter.dev/v2/rates")) {
-        const base = new URL(url).searchParams.get("base");
+        const params = new URL(url).searchParams;
+        const base = params.get("base");
         const rates = ratesByBase[base];
         if (!rates) {
           return new Response(JSON.stringify({ message: `No rates for ${base}.` }), { status: 404 });
+        }
+        // A from/to pair makes this the time-series request, which answers with a
+        // flat array of points rather than a single rates object.
+        if (params.has("from") && params.has("to")) {
+          const quote = (params.get("quotes") || "").split(",")[0];
+          const rate = rates[quote];
+          if (!Number.isFinite(rate)) return json([]);
+          return json(["2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", rateDate]
+            .map((date, index) => ({
+              date,
+              base,
+              quote,
+              rate: Number((rate * (1 + ((index - 2) * 0.004))).toFixed(6))
+            })));
         }
         const quoted = Object.fromEntries(
           Object.entries(rates).filter(([code]) => code !== base)

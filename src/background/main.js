@@ -47,6 +47,11 @@
         return settings.updateSettings(message.payload, message.origin || sender?.url);
       case messages.GET_RATES:
         return global.CurrencyRateService.getRates(message.baseCurrency);
+      case messages.GET_RATE_HISTORY:
+        return global.CurrencyRateHistoryService.getHistory(
+          message.baseCurrency,
+          message.quoteCurrency
+        );
       case messages.GET_CURRENCIES:
         return settings.getAvailableCurrencies();
       case messages.GET_SITE_STATUS:

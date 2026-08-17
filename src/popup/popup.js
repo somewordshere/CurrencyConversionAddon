@@ -47,6 +47,11 @@ const rateToNode = document.getElementById("rateTo");
 const rateValueNode = document.getElementById("rateValue");
 const rateMetaNode = document.getElementById("rateMeta");
 const rateMetaTextNode = document.getElementById("rateMetaText");
+const rateSparkNode = document.getElementById("rateSpark");
+const rateSparkLineNode = document.getElementById("rateSparkLine");
+const rateSparkFillNode = document.getElementById("rateSparkFill");
+const rateSparkPointNode = document.getElementById("rateSparkPoint");
+const rateSparkTitleNode = document.getElementById("rateSparkTitle");
 const currencyNames = new Intl.DisplayNames([navigator.language || "en"], { type: "currency" });
 const M = CurrencyMessages;
 const contentScriptResources = CurrencyPopupContentScriptResources.fromManifest(
@@ -65,6 +70,8 @@ let catalogWarning = null;
 let quickConversionTimer = null;
 let appearanceAnnouncementTimer = null;
 let quickConversionRequestId = 0;
+let rateHistoryRequestId = 0;
+let renderedHistoryPair = null;
 let pageConversionError = null;
 let primaryActionBusy = false;
 let popupReady = false;
@@ -274,6 +281,73 @@ function setRateHeroMessage(meta, kind = "offline") {
   rateValueNode.textContent = "—";
   rateMetaTextNode.textContent = meta;
   rateMetaNode.dataset.kind = kind;
+  hideSparkline();
+}
+
+// The sparkline is decorative. It is requested after the rate resolves and any
+// failure just leaves it hidden, so history never blocks or breaks the hero.
+async function refreshRateHistory(baseCurrency, quoteCurrency) {
+  const pair = `${baseCurrency}:${quoteCurrency}`;
+  if (pair === renderedHistoryPair) return;
+  const requestId = ++rateHistoryRequestId;
+  hideSparkline();
+
+  let result = null;
+  try {
+    result = await ExtensionAPI.runtime.sendMessage({
+      type: M.GET_RATE_HISTORY,
+      baseCurrency,
+      quoteCurrency
+    });
+  } catch (_error) {
+    return;
+  }
+  if (requestId !== rateHistoryRequestId) return;
+  if (!result?.ok || !Array.isArray(result.points) || result.points.length < 2) return;
+
+  renderSparkline(result, baseCurrency, quoteCurrency);
+  renderedHistoryPair = pair;
+}
+
+function hideSparkline() {
+  // `hidden` is reflected by HTMLElement, not SVGElement: assigning `.hidden` on an
+  // <svg> only creates an expando and leaves the attribute in place. Set it directly.
+  rateSparkNode.setAttribute("hidden", "");
+  renderedHistoryPair = null;
+}
+
+function renderSparkline(history, baseCurrency, quoteCurrency) {
+  const width = 76;
+  const height = 30;
+  const padding = 3;
+  const points = history.points;
+  const span = history.high - history.low;
+  const stepX = (width - (padding * 2)) / (points.length - 1);
+
+  const coordinates = points.map((point, index) => {
+    const x = padding + (index * stepX);
+    // A flat series would divide by zero; centre it instead of collapsing to an edge.
+    const ratio = span > 0 ? (point.rate - history.low) / span : 0.5;
+    const y = padding + ((1 - ratio) * (height - (padding * 2)));
+    return [Number(x.toFixed(2)), Number(y.toFixed(2))];
+  });
+
+  const line = coordinates.map(([x, y], index) => `${index ? "L" : "M"}${x} ${y}`).join(" ");
+  rateSparkLineNode.setAttribute("d", line);
+  rateSparkFillNode.setAttribute(
+    "d",
+    `${line} L${coordinates[coordinates.length - 1][0]} ${height} L${coordinates[0][0]} ${height} Z`
+  );
+  const [lastX, lastY] = coordinates[coordinates.length - 1];
+  rateSparkPointNode.setAttribute("cx", String(lastX));
+  rateSparkPointNode.setAttribute("cy", String(lastY));
+
+  const percent = history.changeRatio * 100;
+  const direction = percent > 0.05 ? "up" : percent < -0.05 ? "down" : "flat";
+  rateSparkTitleNode.textContent = direction === "flat"
+    ? `${baseCurrency} to ${quoteCurrency} is flat over the last ${points.length} trading days.`
+    : `${baseCurrency} to ${quoteCurrency} is ${direction} ${Math.abs(percent).toFixed(1)}% over the last ${points.length} trading days.`;
+  rateSparkNode.removeAttribute("hidden");
 }
 
 function formatRateValue(rate) {
@@ -1132,6 +1206,7 @@ async function calculateQuickConversion() {
     meta: describeRateFreshness(result),
     kind: result.stale ? "stale" : "fresh"
   });
+  refreshRateHistory(sourceCurrency, targetCurrency);
   if (amountProblem) return;
 
   const converted = CurrencyCatalog.formatCurrencyAmount(amount * rate, targetCurrency);
