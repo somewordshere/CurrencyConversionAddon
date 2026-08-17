@@ -50,6 +50,43 @@ test("capture popup", async ({ context, extensionWorker, extensionId }) => {
   await popup.screenshot({ path: path.join(OUT, "v2-popup-dark.png"), clip });
 });
 
+test("capture selection bubble", async ({ context, extensionWorker }) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "USD", toCurrency: "EUR", showPagePrompt: false }
+  });
+  const shop = await openShop(context);
+  await runPageCommand(extensionWorker, "CONTENT_READY", SHOP_URL);
+
+  // A real drag across the price, so the browser's own selection highlight is in
+  // the shot and the bubble is positioned by the extension exactly as it would be.
+  const price = await shop.locator("#p3").boundingBox();
+  await shop.mouse.move(price.x + 1, price.y + (price.height / 2));
+  await shop.mouse.down();
+  await shop.mouse.move(price.x + price.width - 1, price.y + (price.height / 2), { steps: 12 });
+  await shop.mouse.up();
+
+  await shop.locator(".ccp-selection-popup").waitFor();
+  await shop.waitForTimeout(400);
+
+  // Crop around the bubble: at full width the interaction shrinks to a few dozen
+  // pixels once the tile scales it down, and the point of the shot is lost. The
+  // edges snap to card boundaries so the crop does not slice a product in half.
+  const bubble = await shop.locator(".ccp-selection-popup").boundingBox();
+  const left = await shop.locator(".card").nth(1).boundingBox();
+  const right = await shop.locator(".card").nth(3).boundingBox();
+  const top = await shop.locator(".thumb").first().boundingBox();
+  const pad = 14;
+  await shop.screenshot({
+    path: path.join(OUT, "v2-inpage-selection.png"),
+    clip: {
+      x: left.x - pad,
+      y: top.y - pad,
+      width: (right.x + right.width + pad) - (left.x - pad),
+      height: (bubble.y + bubble.height + pad) - (top.y - pad)
+    }
+  });
+});
+
 test("capture in-page surfaces", async ({ context, extensionWorker }) => {
   await seedExtension(extensionWorker, {
     settings: { fromCurrency: "USD", toCurrency: "EUR", showPagePrompt: true }

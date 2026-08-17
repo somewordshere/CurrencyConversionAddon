@@ -41,6 +41,14 @@ const TILES = [
     headline: "Converted prices that stand out",
     body: "Style the converted price however you like. Contrast is checked for you as you pick colours.",
     shotWidth: 760
+  },
+  {
+    file: "04-select-price.png",
+    source: "v2-inpage-selection.png",
+    kicker: "One price at a time",
+    headline: "Highlight a price to convert it",
+    body: "Select any price and a converter appears right beside it. Nothing else on the page is touched.",
+    shotWidth: 760
   }
 ];
 
