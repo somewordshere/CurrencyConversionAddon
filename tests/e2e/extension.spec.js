@@ -1,8 +1,15 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { test, expect } = require("./fixtures");
+const {
+  DEFAULT_SHOP_URL: SHOP_URL,
+  evaluateRealActionPopup,
+  openPopupForPage,
+  runContentUiScenario,
+  runPageCommand,
+  seedExtension
+} = require("./harness");
 
-const SHOP_URL = "https://api.frankfurter.dev/test-shop";
 const UNAPPROVED_SHOP_URL = "https://unapproved-shop.example.test/";
 const SHOP_HTML = fs.readFileSync(path.resolve(__dirname, "../fixtures/shop.html"), "utf8");
 const SPLIT_PRICE_URL = "https://api.frankfurter.dev/digitec-split-price";
@@ -16,214 +23,6 @@ const SPLIT_FRACTION_HTML = fs.readFileSync(
   "utf8"
 );
 
-async function seedExtension(extensionWorker, options = {}) {
-  const settings = {
-    enabled: true,
-    fromCurrency: "AUTO",
-    toCurrency: "EUR",
-    displayMode: "beside",
-    convertedTextColor: "#166534",
-    convertedBackgroundColor: "#dcfce7",
-    convertedShape: "rounded",
-    showPagePrompt: false,
-    ...(options.settings || {})
-  };
-  const localOverrides = options.local || {};
-
-  await extensionWorker.evaluate(async ({ settings, localOverrides }) => {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      const stored = await chrome.storage.sync.get("enabled");
-      if (typeof stored.enabled === "boolean") break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    await chrome.storage.sync.set(settings);
-    await chrome.storage.local.set({
-      providerCurrencyCatalog: {
-        version: 1,
-        fetchedAt: new Date().toISOString(),
-        currencies: [
-          { code: "CHF", name: "Swiss Franc", symbol: "CHF", startDate: "1999-01-04", endDate: "2026-07-10" },
-          { code: "PLN", name: "Polish Zloty", symbol: "PLN", startDate: "1999-01-04", endDate: "2026-07-10" },
-          { code: "AFN", name: "Afghan Afghani", symbol: "؋", startDate: "1999-01-01", endDate: "2026-07-10" },
-          { code: "EUR", name: "Euro", symbol: "â‚¬", startDate: "1999-01-04", endDate: "2026-07-10" },
-          { code: "USD", name: "United States Dollar", symbol: "$", startDate: "1999-01-04", endDate: "2026-07-10" }
-        ]
-      },
-      ratesCache: {
-        version: 3,
-        bases: {
-          USD: {
-            fetchedAt: new Date().toISOString(),
-            rateDate: "2026-07-10",
-            catalogSignature: "AFN,CHF,EUR,PLN,USD",
-            rates: { USD: 1, EUR: 0.9, CHF: 0.8 }
-          },
-          CHF: {
-            fetchedAt: new Date().toISOString(),
-            rateDate: "2026-07-10",
-            catalogSignature: "AFN,CHF,EUR,PLN,USD",
-            rates: { CHF: 1, EUR: 1.08 }
-          },
-          PLN: {
-            fetchedAt: new Date().toISOString(),
-            rateDate: "2026-07-10",
-            catalogSignature: "AFN,CHF,EUR,PLN,USD",
-            rates: { PLN: 1, EUR: 0.235 }
-          }
-        }
-      },
-      ...localOverrides
-    });
-  }, { settings, localOverrides });
-}
-
-async function runPageCommand(extensionWorker, type, url = SHOP_URL) {
-  return extensionWorker.evaluate(async ({ url, type }) => {
-    const tabs = await chrome.tabs.query({});
-    const tab = tabs.find((candidate) => candidate.url === url);
-    if (!tab?.id) throw new Error(`Could not find test page tab: ${url}`);
-    await ensureContentScripts(tab.id);
-    return chrome.tabs.sendMessage(tab.id, { type });
-  }, { url, type });
-}
-
-async function openPopupForPage(context, extensionId, activePage) {
-  // chrome.action.openPopup() creates a real POPUP runtime context in headless Chromium,
-  // but Playwright does not expose that context as a Page. Loading the same extension
-  // document in a background tab while the shop stays active exercises the popup code
-  // against the real target tab and keeps its DOM inspectable.
-  const popup = await context.newPage();
-  await activePage.bringToFront();
-  await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
-  await expect(popup.getByRole("heading", { name: "Currency Converter Pro" })).toBeVisible();
-  return popup;
-}
-
-async function evaluateRealActionPopup(context, extensionWorker, activePage, expression) {
-  await activePage.bringToFront();
-  await extensionWorker.evaluate(() => chrome.action.openPopup());
-
-  const popupUrl = new URL("/popup/popup.html", extensionWorker.url()).href;
-  const cdp = await context.newCDPSession(activePage);
-  let popupTarget;
-
-  try {
-    await expect.poll(async () => {
-      const { targetInfos } = await cdp.send("Target.getTargets");
-      popupTarget = targetInfos.find((target) => target.url === popupUrl);
-      return Boolean(popupTarget);
-    }).toBe(true);
-
-    const { sessionId } = await cdp.send("Target.attachToTarget", {
-      targetId: popupTarget.targetId,
-      flatten: false
-    });
-    const commandId = 1;
-    const response = new Promise((resolve, reject) => {
-      const receive = ({ sessionId: source, message }) => {
-        if (source !== sessionId) return;
-        const payload = JSON.parse(message);
-        if (payload.id !== commandId) return;
-        cdp.off("Target.receivedMessageFromTarget", receive);
-        if (payload.error) reject(new Error(payload.error.message));
-        else resolve(payload);
-      };
-      cdp.on("Target.receivedMessageFromTarget", receive);
-    });
-
-    await cdp.send("Target.sendMessageToTarget", {
-      sessionId,
-      message: JSON.stringify({
-        id: commandId,
-        method: "Runtime.evaluate",
-        params: { expression, awaitPromise: true, returnByValue: true }
-      })
-    });
-
-    const payload = await response;
-    await cdp.send("Target.detachFromTarget", { sessionId });
-    return payload.result.result.value;
-  } finally {
-    await cdp.detach();
-  }
-}
-
-async function runContentUiScenario(extensionWorker, scenario, url = SHOP_URL) {
-  return extensionWorker.evaluate(async ({ scenario, url }) => {
-    const tabs = await chrome.tabs.query({});
-    const tab = tabs.find((candidate) => candidate.url === url);
-    if (!tab?.id) throw new Error(`Could not find test page tab: ${url}`);
-    const [execution] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      world: "ISOLATED",
-      args: [scenario],
-      func: async (scenarioName) => {
-        const ui = globalThis.CurrencyPageUi;
-        if (!ui) return { ok: false, error: "CurrencyPageUi is not loaded." };
-        const settings = {
-          enabled: true,
-          fromCurrency: "USD",
-          toCurrency: "EUR",
-          displayMode: "beside",
-          showPagePrompt: false
-        };
-
-        if (scenarioName === "selection-success") {
-          ui.configure({
-            settings,
-            runConversion: async () => ({ ok: true }),
-            clearConversion: async () => ({ ok: true }),
-            convertSelection: async () => {
-              await new Promise((resolve) => setTimeout(resolve, 200));
-              return { ok: true, sourceCurrency: "USD", converted: "EUR 90.00" };
-            }
-          });
-        } else if (scenarioName === "rejected-actions") {
-          ui.configure({
-            settings,
-            runConversion: async () => {
-              throw new Error("Conversion callback rejected");
-            },
-            clearConversion: async () => {
-              throw new Error("Restore callback rejected");
-            },
-            convertSelection: async () => {
-              throw new Error("Selection callback rejected");
-            }
-          });
-          ui.showPageConvertPrompt();
-        } else if (scenarioName === "undo-rejection") {
-          ui.configure({
-            settings,
-            runConversion: async () => ({
-              ok: true,
-              count: 1,
-              detectedCurrency: "USD"
-            }),
-            clearConversion: async () => {
-              throw new Error("Restore callback rejected");
-            },
-            convertSelection: async () => {
-              throw new Error("Selection callback rejected");
-            }
-          });
-        } else if (scenarioName === "toast-rejection") {
-          ui.showToast("Converted 1 price.", {
-            actionLabel: "Undo",
-            onAction: async () => {
-              throw new Error("Toast callback rejected");
-            }
-          });
-        } else {
-          return { ok: false, error: `Unknown scenario: ${scenarioName}` };
-        }
-        return { ok: true };
-      }
-    });
-    return execution?.result;
-  }, { scenario, url });
-}
-
 test("real action popup keeps its designed width and scrolls expanded options", async ({
   context,
   extensionWorker
@@ -236,8 +35,25 @@ test("real action popup keeps its designed width and scrolls expanded options", 
     extensionWorker,
     activePage,
     `(async () => {
-      const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-      await wait(300);
+      const waitFor = (condition, description) => new Promise((resolve, reject) => {
+        const deadline = performance.now() + 5000;
+        const check = () => {
+          if (condition()) {
+            resolve();
+            return;
+          }
+          if (performance.now() >= deadline) {
+            reject(new Error(\`Timed out waiting for \${description}.\`));
+            return;
+          }
+          requestAnimationFrame(check);
+        };
+        check();
+      });
+      await waitFor(() => {
+        const app = document.querySelector("#popupApp");
+        return document.readyState === "complete" && app?.clientWidth > 0 && app.clientHeight > 0;
+      }, "the action popup layout");
 
       const measure = () => {
         const app = document.querySelector("#popupApp");
@@ -257,7 +73,10 @@ test("real action popup keeps its designed width and scrolls expanded options", 
 
       const closed = measure();
       document.querySelector("#pageOptions").open = true;
-      await wait(350);
+      await waitFor(() => {
+        const app = document.querySelector("#popupApp");
+        return app.scrollHeight > app.clientHeight;
+      }, "expanded page options to overflow the popup");
       return { closed, expanded: measure() };
     })()`
   );
@@ -419,6 +238,217 @@ test("offers conversion when a dynamic page adds a price later", async ({
   await expect(shop.locator(".ccp-page-prompt")).toBeVisible();
 });
 
+test("continues converting mutations inside a late-added open shadow root", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "USD", showPagePrompt: false }
+  });
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: "<!doctype html><main><h1>Shadow shop</h1></main>"
+  }));
+  await shop.goto(SHOP_URL);
+  expect((await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION")).ok).toBe(false);
+
+  await shop.evaluate(() => {
+    const host = document.createElement("section");
+    host.id = "late-shadow-host";
+    host.attachShadow({ mode: "open" }).innerHTML =
+      '<p id="late-shadow-price" class="product-price">Shadow: $10.00</p>';
+    document.body.appendChild(host);
+  });
+  const shadowPrice = shop.locator("#late-shadow-price");
+  await expect(shadowPrice.locator(".ccp-badge")).toContainText("9,00");
+
+  await shadowPrice.evaluate((element) => {
+    element.textContent = "Shadow updated: $20.00";
+  });
+  await expect(shadowPrice.locator(".ccp-badge")).toContainText("18,00");
+
+  const shadowWrapper = shadowPrice.locator("ccp-conversion[data-ccp-owned='true']");
+  await shadowWrapper.evaluate((element) => {
+    element.dataset.presentationIdentity = "late-shadow";
+  });
+  await extensionWorker.evaluate(() => chrome.storage.sync.set({
+    convertedTextColor: "#123456"
+  }));
+  await expect(shadowPrice.locator(".ccp-badge")).toHaveCSS("color", "rgb(18, 52, 86)");
+  await expect(shadowWrapper).toHaveAttribute("data-presentation-identity", "late-shadow");
+});
+
+test("rescans the full document when an SPA route changes", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "AUTO", showPagePrompt: false }
+  });
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: `<!doctype html>
+      <head><meta property="product:price:currency" content="USD"></head>
+      <body>
+        <main>
+          <p id="initial-route-price" class="product-price">Initial: $10.00</p>
+          <p id="next-route-price" class="product-price" hidden>Next route: $20.00</p>
+        </main>
+        <aside id="route-mutation-slot"></aside>
+      </body>`
+  }));
+  await shop.goto(SHOP_URL);
+
+  const initialResult = await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION");
+  expect(initialResult.ok).toBe(true);
+  expect(initialResult.count).toBe(1);
+  const initialBadge = shop.locator("#initial-route-price .ccp-badge");
+  await expect(initialBadge).toContainText("9,00");
+
+  await extensionWorker.evaluate(() => {
+    globalThis.__ccpOriginalSpaRateService = globalThis.CurrencyRateService;
+    globalThis.__ccpSpaRateBase = null;
+    globalThis.CurrencyRateService = Object.freeze({
+      ...globalThis.CurrencyRateService,
+      getRates: async (baseCurrency) => {
+        if (baseCurrency !== "MXN") {
+          return globalThis.__ccpOriginalSpaRateService.getRates(baseCurrency);
+        }
+        globalThis.__ccpSpaRateBase = baseCurrency;
+        return {
+          ok: true,
+          rates: { MXN: 1, EUR: 0.05 },
+          date: "2026-07-10",
+          provider: "SPA route test rate"
+        };
+      }
+    });
+  });
+
+  try {
+    await shop.evaluate(() => {
+      history.pushState({}, "", "/spa-route-two");
+      document.querySelector("meta[property='product:price:currency']").content = "MXN";
+      document.querySelector("#next-route-price").hidden = false;
+    });
+
+    // Exercise the idempotent startWatching path between pushState and the first
+    // observable route mutation. It must not accept the new URL prematurely.
+    await extensionWorker.evaluate(() => chrome.storage.sync.set({
+      convertedTextColor: "#123456"
+    }));
+    await expect(initialBadge).toHaveCSS("color", "rgb(18, 52, 86)");
+    await expect(shop.locator("#next-route-price ccp-conversion")).toHaveCount(0);
+
+    await shop.locator("#route-mutation-slot").evaluate((element) => {
+      const unrelated = document.createElement("span");
+      unrelated.textContent = "Route UI ready";
+      element.appendChild(unrelated);
+    });
+
+    const routeBadge = shop.locator("#next-route-price .ccp-badge");
+    await expect(routeBadge).toContainText("1,00");
+    await expect.poll(() => extensionWorker.evaluate(
+      () => globalThis.__ccpSpaRateBase
+    )).toBe("MXN");
+  } finally {
+    await extensionWorker.evaluate(() => {
+      if (globalThis.__ccpOriginalSpaRateService) {
+        globalThis.CurrencyRateService = globalThis.__ccpOriginalSpaRateService;
+      }
+      delete globalThis.__ccpOriginalSpaRateService;
+      delete globalThis.__ccpSpaRateBase;
+    });
+  }
+});
+
+test("an explicit full scan escalates an in-flight mutation subset scan", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, {
+    settings: { fromCurrency: "USD", showPagePrompt: false }
+  });
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: "<!doctype html><main><h1>Queued shop</h1></main>"
+  }));
+  await shop.goto(SHOP_URL);
+  await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION");
+
+  await extensionWorker.evaluate(() => {
+    globalThis.__ccpOriginalEscalationRateService = globalThis.CurrencyRateService;
+    globalThis.__ccpEscalationRateRequested = false;
+    globalThis.__ccpEscalationRate = new Promise((resolve) => {
+      globalThis.__ccpReleaseEscalationRate = () => resolve({
+        ok: true,
+        rates: { USD: 1, EUR: 0.9 },
+        date: "2026-07-10",
+        provider: "Escalation test rate"
+      });
+    });
+    globalThis.CurrencyRateService = Object.freeze({
+      ...globalThis.CurrencyRateService,
+      getRates: async () => {
+        globalThis.__ccpEscalationRateRequested = true;
+        return globalThis.__ccpEscalationRate;
+      }
+    });
+  });
+
+  try {
+    await shop.evaluate(() => {
+      const subset = document.createElement("p");
+      subset.id = "subset-price";
+      subset.className = "product-price";
+      subset.textContent = "Subset: $10.00";
+      document.body.appendChild(subset);
+    });
+    await expect.poll(() => extensionWorker.evaluate(
+      () => globalThis.__ccpEscalationRateRequested
+    )).toBe(true);
+
+    await shop.evaluate(() => {
+      const fullOnly = document.createElement("p");
+      fullOnly.id = "full-only-price";
+      fullOnly.className = "product-price";
+      fullOnly.textContent = "Full only: $20.00";
+      document.body.appendChild(fullOnly);
+    });
+    await extensionWorker.evaluate(async (url) => {
+      const tabs = await chrome.tabs.query({});
+      const tab = tabs.find((candidate) => candidate.url === url);
+      if (!tab?.id) throw new Error(`Could not find test page tab: ${url}`);
+      globalThis.__ccpEscalatedFullConversion = chrome.tabs.sendMessage(tab.id, {
+        type: "RUN_SITE_CONVERSION"
+      });
+    }, SHOP_URL);
+    await extensionWorker.evaluate(() => globalThis.__ccpReleaseEscalationRate());
+    const result = await extensionWorker.evaluate(() => globalThis.__ccpEscalatedFullConversion);
+
+    expect(result.ok).toBe(true);
+    expect(result.count).toBe(2);
+    await expect(shop.locator("#subset-price .ccp-badge")).toContainText("9,00");
+    await expect(shop.locator("#full-only-price .ccp-badge")).toContainText("18,00");
+  } finally {
+    await extensionWorker.evaluate(() => {
+      globalThis.__ccpReleaseEscalationRate?.();
+      globalThis.CurrencyRateService = globalThis.__ccpOriginalEscalationRateService;
+      delete globalThis.__ccpOriginalEscalationRateService;
+      delete globalThis.__ccpEscalationRateRequested;
+      delete globalThis.__ccpEscalationRate;
+      delete globalThis.__ccpReleaseEscalationRate;
+      delete globalThis.__ccpEscalatedFullConversion;
+    });
+  }
+});
+
 test("page prompt and keyboard-selection control restore focus on Escape", async ({
   context,
   extensionWorker
@@ -486,6 +516,10 @@ test("page prompt and keyboard-selection control restore focus on Escape", async
     "aria-label",
     "Converting selected USD price to EUR"
   );
+  expect(await runContentUiScenario(
+    extensionWorker,
+    "complete-selection-success"
+  )).toEqual({ ok: true });
   await expect(selectionControl).toHaveAttribute(
     "aria-label",
     "Converted selected USD price to EUR 90.00"
@@ -1084,6 +1118,10 @@ test("converted price appearance previews live, persists, and styles the page", 
   const shadowBadge = shop.locator("#shadow-price .ccp-badge");
   await expect(convertedBadge).toHaveCSS("color", "rgb(22, 101, 52)");
   await expect(shadowBadge).toHaveCSS("background-color", "rgb(220, 252, 231)");
+  const appearanceConversion = shop.locator("#initial ccp-conversion");
+  await appearanceConversion.evaluate((element) => {
+    element.dataset.appearancePreservationCheck = "same-conversion";
+  });
 
   const popup = await openPopupForPage(context, extensionId, shop);
   await popup.setViewportSize({ width: 440, height: 600 });
@@ -1145,6 +1183,10 @@ test("converted price appearance previews live, persists, and styles the page", 
   await expect(convertedBadge).toHaveCSS("background-color", "rgb(17, 24, 39)");
   await expect(convertedBadge).toHaveAttribute("data-ccp-shape", "pill");
   await expect(shadowBadge).toHaveAttribute("data-ccp-shape", "pill");
+  await expect(appearanceConversion).toHaveAttribute(
+    "data-appearance-preservation-check",
+    "same-conversion"
+  );
 
   await reopenedPopup.getByLabel("Price display").selectOption("replace");
   await expect(shop.locator("#shadow-price .ccp-original")).toHaveCSS("display", "none");
@@ -1160,6 +1202,10 @@ test("converted price appearance previews live, persists, and styles the page", 
   })).toBe("#166534:#dcfce7:rounded");
   await expect(convertedBadge).toHaveCSS("color", "rgb(22, 101, 52)");
   await expect(shadowBadge).toHaveCSS("background-color", "rgb(220, 252, 231)");
+  await expect(appearanceConversion).toHaveAttribute(
+    "data-appearance-preservation-check",
+    "same-conversion"
+  );
   await expect(reopenedPopup.getByRole("button", { name: "Reset appearance" })).toBeFocused();
 });
 
@@ -1252,7 +1298,7 @@ test("real extension popup, injection, dynamic conversion, and undo work togethe
 
   await extensionWorker.evaluate(() => chrome.storage.sync.set({ displayMode: "replace" }));
   await expect(initialConversion).toHaveAttribute("data-display-mode", "replace");
-  await expect(initialConversion).not.toHaveAttribute("data-preservation-check", /.+/);
+  await expect(initialConversion).toHaveAttribute("data-preservation-check", "same-conversion");
   await expect(initialConversion.locator(".ccp-original")).toBeHidden();
   await extensionWorker.evaluate(() => chrome.storage.sync.set({ displayMode: "beside" }));
   await expect(initialConversion).toHaveAttribute("data-display-mode", "beside");

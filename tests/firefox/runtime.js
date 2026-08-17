@@ -12,6 +12,7 @@ const {
   until
 } = require("selenium-webdriver");
 const firefox = require("selenium-webdriver/firefox");
+const { createSeededExtensionState } = require("../helpers/extension-state");
 
 const ROOT = path.resolve(__dirname, "../..");
 const FIREFOX_DIST = path.join(ROOT, "dist", "firefox");
@@ -60,6 +61,7 @@ test("Firefox page access and popup handlers convert and undo a real webpage", {
     await navigateBidiContext(popupScript, popupContext.context, popupUrl);
 
     await waitForPopup(
+      driver,
       popupScript,
       popupContext.context,
       "document.querySelector('#fromCurrency').options.length >= 2 && " +
@@ -100,6 +102,7 @@ test("Firefox page access and popup handlers convert and undo a real webpage", {
 
     assert.match(await driver.findElement(By.id("initial")).getText(), /90[.,]00/);
     await waitForPopup(
+      driver,
       popupScript,
       popupContext.context,
       "document.querySelector('#clearPage') && !document.querySelector('#clearPage').disabled"
@@ -227,55 +230,30 @@ async function getExtensionOrigin(driver, addonId) {
 async function seedExtensionState(driver, extensionOrigin, fixtureUrl) {
   await driver.get(`${extensionOrigin}/popup/popup.html`);
   await driver.wait(until.elementLocated(By.id("convertSite")), FIREFOX_TIMEOUT_MS);
-  const now = new Date().toISOString();
+  await driver.wait(async () => driver.executeAsyncScript(`
+    const done = arguments[arguments.length - 1];
+    browser.storage.sync.get("enabled").then(
+      (stored) => done(typeof stored.enabled === "boolean"),
+      () => done(false)
+    );
+  `), FIREFOX_TIMEOUT_MS);
+
+  const state = createSeededExtensionState({
+    settings: { showPagePrompt: false },
+    local: {
+      siteSourceCurrencies: {
+        [new URL(fixtureUrl).origin]: "USD"
+      }
+    }
+  });
   const error = await driver.executeAsyncScript(`
     const state = arguments[0];
     const done = arguments[arguments.length - 1];
     (async () => {
-      for (let attempt = 0; attempt < 200; attempt += 1) {
-        const stored = await browser.storage.sync.get("enabled");
-        if (typeof stored.enabled === "boolean") break;
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
       await browser.storage.sync.set(state.sync);
       await browser.storage.local.set(state.local);
     })().then(() => done(null), (failure) => done(String(failure?.message || failure)));
-  `, {
-    sync: {
-      enabled: true,
-      fromCurrency: "AUTO",
-      toCurrency: "EUR",
-      displayMode: "beside",
-      convertedTextColor: "#166534",
-      convertedBackgroundColor: "#dcfce7",
-      convertedShape: "rounded",
-      showPagePrompt: false
-    },
-    local: {
-      siteSourceCurrencies: {
-        [new URL(fixtureUrl).origin]: "USD"
-      },
-      providerCurrencyCatalog: {
-        version: 1,
-        fetchedAt: now,
-        currencies: [
-          { code: "EUR", name: "Euro", symbol: "€", startDate: "1999-01-04", endDate: null },
-          { code: "USD", name: "United States Dollar", symbol: "$", startDate: "1999-01-04", endDate: null }
-        ]
-      },
-      ratesCache: {
-        version: 3,
-        bases: {
-          USD: {
-            fetchedAt: now,
-            rateDate: now.slice(0, 10),
-            catalogSignature: "EUR,USD",
-            rates: { EUR: 0.9, USD: 1 }
-          }
-        }
-      }
-    }
-  });
+  `, state);
   assert.equal(error, null, `Could not seed Firefox extension state: ${error}`);
 }
 
@@ -354,17 +332,21 @@ async function navigateBidiContext(bidi, contextId, url) {
   assertBidiSuccess(response, "Could not reload the Firefox popup in the background");
 }
 
-async function waitForPopup(bidi, contextId, expression) {
-  const deadline = Date.now() + FIREFOX_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    try {
-      if (await evaluatePopup(bidi, contextId, `Boolean(${expression})`)) return;
-    } catch (error) {
-      if (!/no such frame|no such window|realm/i.test(error.message)) throw error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
+async function waitForPopup(driver, bidi, contextId, expression) {
+  try {
+    await driver.wait(async () => {
+      try {
+        return await evaluatePopup(bidi, contextId, `Boolean(${expression})`);
+      } catch (error) {
+        if (!/no such frame|no such window|realm/i.test(error.message)) throw error;
+        return false;
+      }
+    }, FIREFOX_TIMEOUT_MS);
+  } catch (error) {
+    throw new Error(`Timed out waiting for the Firefox popup: ${expression}`, {
+      cause: error
+    });
   }
-  throw new Error(`Timed out waiting for the Firefox popup: ${expression}`);
 }
 
 async function evaluatePopup(bidi, contextId, expression) {

@@ -25,15 +25,18 @@
 
   ExtensionAPI.storage.onChanged.addListener(async (changes, areaName) => {
     if (areaName === "sync") {
-      const conversionSettingsChanged = Boolean(
-        changes.enabled || changes.fromCurrency || changes.toCurrency || changes.displayMode ||
-        changes.convertedTextColor || changes.convertedBackgroundColor || changes.convertedShape
+      const rateSettingsChanged = CurrencySettings.changesInclude(
+        changes,
+        CurrencySettings.RATE_AFFECTING_KEYS
       );
+      const presentationSettingsChanged = CurrencySettings.changesInclude(
+        changes,
+        CurrencySettings.PRESENTATION_KEYS
+      );
+      const conversionSettingsChanged = rateSettingsChanged || presentationSettingsChanged;
       if (conversionSettingsChanged || changes.showPagePrompt) {
-        if (conversionSettingsChanged) {
-          invalidatePendingPageCommands();
-        }
-        await queueSettingsReload({ failClosed: conversionSettingsChanged });
+        if (rateSettingsChanged) invalidatePendingPageCommands();
+        await queueSettingsReload({ failClosed: rateSettingsChanged });
       }
     }
     if (areaName === "local") {
@@ -149,13 +152,14 @@
       return;
     }
     const hadConversions = CurrencyPageConverter.hasConversions();
-    const conversionSettingsChanged = adoptSettings(result.settings, previousSettings);
+    const settingsChanges = adoptSettings(result.settings, previousSettings);
     if (reloadGeneration !== pageCommandGeneration) return;
     const renderedSettingsChanged = hadConversions &&
+      renderedConversionSettingsKey !== null &&
       renderedConversionSettingsKey !== conversionSettingsKey(settings);
 
     if (hadConversions && settings.enabled) {
-      if (conversionSettingsChanged || renderedSettingsChanged) {
+      if (settingsChanges.rateSettingsChanged || renderedSettingsChanged) {
         CurrencyPageUi.clearTransientUi();
         CurrencyPageUi.removePageConvertPrompt();
         const conversionResult = await runSiteConversion();
@@ -174,6 +178,12 @@
       }
       return;
     }
+
+    if (
+      !settingsChanges.rateSettingsChanged &&
+      settingsChanges.presentationSettingsChanged &&
+      !settingsChanges.pagePromptChanged
+    ) return;
 
     clearRenderedConversions();
     CurrencyPageUi.clearTransientUi();
@@ -202,18 +212,19 @@
 
   function adoptSettings(nextSettings, previousSettings) {
     settings = nextSettings;
-    const conversionSettingsChanged = !previousSettings || [
-      "enabled",
-      "fromCurrency",
-      "toCurrency",
-      "displayMode",
-      "convertedTextColor",
-      "convertedBackgroundColor",
-      "convertedShape"
-    ].some((key) => previousSettings[key] !== settings[key]);
-    if (conversionSettingsChanged) {
+    const rateSettingsChanged = !previousSettings || CurrencySettings.RATE_AFFECTING_KEYS.some(
+      (key) => previousSettings[key] !== settings[key]
+    );
+    const presentationSettingsChanged = !previousSettings || CurrencySettings.PRESENTATION_KEYS.some(
+      (key) => previousSettings[key] !== settings[key]
+    );
+    const pagePromptChanged = !previousSettings ||
+      previousSettings.showPagePrompt !== settings.showPagePrompt;
+    if (rateSettingsChanged) {
       CurrencyDetector.resetPageCurrencyDetection();
       CurrencyPageConverter.configure(settings);
+    } else if (presentationSettingsChanged) {
+      CurrencyPageConverter.updatePresentation(settings);
     }
     CurrencyPageUi.configure({
       settings,
@@ -221,7 +232,7 @@
       clearConversion: clearPromptConversion,
       convertSelection: CurrencyPageConverter.convertSelectionText
     });
-    return conversionSettingsChanged;
+    return { rateSettingsChanged, presentationSettingsChanged, pagePromptChanged };
   }
 
   async function applySitePreference(expectedGeneration = pageCommandGeneration) {
@@ -340,27 +351,15 @@
   }
 
   function conversionSettingsKey(value) {
-    return JSON.stringify([
-      value?.enabled,
-      value?.fromCurrency,
-      value?.toCurrency,
-      value?.displayMode,
-      value?.convertedTextColor,
-      value?.convertedBackgroundColor,
-      value?.convertedShape
-    ]);
+    return JSON.stringify(CurrencySettings.RATE_AFFECTING_KEYS.map((key) => value?.[key]));
   }
 
   async function failClosedSettingsReload(reloadGeneration) {
     if (reloadGeneration !== pageCommandGeneration) return;
     const disabledSettings = {
+      ...CurrencySettings.DEFAULTS,
+      ...settings,
       enabled: false,
-      fromCurrency: settings?.fromCurrency || "AUTO",
-      toCurrency: settings?.toCurrency || "EUR",
-      displayMode: settings?.displayMode || "beside",
-      convertedTextColor: settings?.convertedTextColor || "#166534",
-      convertedBackgroundColor: settings?.convertedBackgroundColor || "#dcfce7",
-      convertedShape: settings?.convertedShape || "rounded",
       showPagePrompt: false
     };
     adoptSettings(disabledSettings, settings);

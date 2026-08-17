@@ -13,17 +13,6 @@
   const DOM_WRITE_BATCH_SIZE = 200;
   const MAX_DISCOVERY_TEXT_NODES = 6000;
   const MAX_DISCOVERY_PRICE_ELEMENTS = 300;
-  const DEFAULT_CONVERTED_APPEARANCE = Object.freeze({
-    textColor: "#166534",
-    backgroundColor: "#dcfce7",
-    shape: "rounded"
-  });
-  const CONVERTED_SHAPE_RADII = Object.freeze({
-    square: "0",
-    rounded: "0.35em",
-    pill: "999px"
-  });
-  const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
   const POSSIBLE_PRICE_TEXT_PATTERN = /[0-9０-９]/;
   const QUICK_CURRENCY_MARKER_PATTERN = new RegExp(
     [...new Set(Object.entries(CurrencyCatalog.CURRENCY_META).flatMap(([currency, meta]) =>
@@ -54,19 +43,34 @@
   let activeRatesByBase = {};
   let activeRateMetaByBase = {};
   let currentConversion = null;
+  let queuedConversion = null;
   let conversionGeneration = 0;
-  let observer = null;
-  let observerHandle = null;
-  let observerUsesIdleCallback = false;
-  let discoveryObserver = null;
-  let discoveryHandle = null;
-  let discoveryUsesIdleCallback = false;
   let discoveryCallback = null;
-  const discoveryRoots = new Set();
   let observedUrl = window.location.href;
-  const pendingRoots = new Set();
-  const observedShadowRoots = new WeakSet();
-  const renderedConversions = new Set();
+  const conversionRegistry = CurrencyConversionRegistry.create({
+    updateWrapperPresentation: updateConvertedPresentation
+  });
+  const discoveryScheduler = CurrencyMutationRootScheduler.create({
+    rootProvider: () => document.body,
+    onFlush: inspectDiscoveryRoots,
+    onError: () => {},
+    shouldIgnore: isOwnedElement,
+    maxPendingRoots: MAX_PENDING_ROOTS,
+    maxShadowHosts: MAX_SHADOW_HOSTS_PER_SCAN,
+    idleTimeout: 300,
+    fallbackDelay: 75
+  });
+  const conversionScheduler = CurrencyMutationRootScheduler.create({
+    rootProvider: () => document.body,
+    onFlush: convertMutationRoots,
+    onBeforeMutations: handleObservedMutations,
+    onError: () => {},
+    shouldIgnore: isOwnedElement,
+    maxPendingRoots: MAX_PENDING_ROOTS,
+    maxShadowHosts: MAX_SHADOW_HOSTS_PER_SCAN,
+    idleTimeout: 750,
+    fallbackDelay: 150
+  });
 
   function configure(nextSettings) {
     cancelPendingConversion();
@@ -75,25 +79,98 @@
     activeRateMetaByBase = {};
   }
 
+  function updatePresentation(nextSettings) {
+    if (!settings) {
+      settings = Object.freeze({ ...nextSettings });
+      return;
+    }
+    const presentation = Object.fromEntries(CurrencySettings.PRESENTATION_KEYS.map((key) => [
+      key,
+      nextSettings[key]
+    ]));
+    settings = Object.freeze({ ...settings, ...presentation });
+    conversionRegistry.updatePresentation(settings);
+  }
+
   function runSiteConversion(options = {}) {
     if (!settings?.enabled) {
       return Promise.resolve({ ok: false, error: "Extension is turned off." });
     }
 
-    const generation = conversionGeneration;
-    const runSettings = settings;
-    if (currentConversion?.generation === generation) return currentConversion.promise;
+    const request = createConversionRequest(options);
+    if (!currentConversion || currentConversion.generation !== request.generation) {
+      return startConversionRequest(request);
+    }
+    if (conversionRequestCovers(currentConversion, request)) return currentConversion.promise;
+    return enqueueConversionRequest(request);
+  }
 
-    const task = { generation, promise: null };
-    task.promise = performConversion(options, generation, runSettings).finally(() => {
+  function createConversionRequest(options = {}) {
+    const roots = options.roots || null;
+    return {
+      generation: conversionGeneration,
+      runSettings: settings,
+      fullScan: roots === null,
+      clearExisting: options.clearExisting !== false,
+      observe: options.observe !== false,
+      roots,
+      waiters: []
+    };
+  }
+
+  function startConversionRequest(request) {
+    const task = { ...request, promise: null };
+    task.promise = performConversion({
+      clearExisting: request.clearExisting,
+      observe: request.observe,
+      roots: request.roots
+    }, request.generation, request.runSettings).finally(() => {
       if (currentConversion !== task) return;
       currentConversion = null;
-      if (isCurrentRun(generation, runSettings) && pendingRoots.size) {
-        schedulePendingConversion();
-      }
+      startQueuedConversion(request.generation);
     });
     currentConversion = task;
     return task.promise;
+  }
+
+  function conversionRequestCovers(active, request) {
+    return active.fullScan && request.fullScan &&
+      (active.clearExisting || !request.clearExisting) &&
+      (active.observe || !request.observe);
+  }
+
+  function enqueueConversionRequest(request) {
+    if (!queuedConversion || queuedConversion.generation !== request.generation) {
+      queuedConversion = { ...request, roots: request.roots ? new Set(request.roots) : null, waiters: [] };
+    } else {
+      queuedConversion.clearExisting ||= request.clearExisting;
+      queuedConversion.observe ||= request.observe;
+      if (request.fullScan) {
+        queuedConversion.fullScan = true;
+        queuedConversion.roots = null;
+      } else if (!queuedConversion.fullScan) {
+        for (const root of request.roots || []) queuedConversion.roots.add(root);
+      }
+    }
+    return new Promise((resolve, reject) => {
+      queuedConversion.waiters.push({ resolve, reject });
+    });
+  }
+
+  function startQueuedConversion(completedGeneration) {
+    const request = queuedConversion;
+    if (!request || request.generation !== completedGeneration) return;
+    queuedConversion = null;
+    if (!isCurrentRun(request.generation, request.runSettings)) {
+      const result = cancelledConversionResult();
+      for (const waiter of request.waiters) waiter.resolve(result);
+      return;
+    }
+    if (request.roots instanceof Set) request.roots = [...request.roots];
+    startConversionRequest(request).then(
+      (result) => request.waiters.forEach((waiter) => waiter.resolve(result)),
+      (error) => request.waiters.forEach((waiter) => waiter.reject(error))
+    );
   }
 
   async function performConversion({
@@ -137,7 +214,7 @@
       return cancelledConversionResult();
     }
     const count = applied.count;
-    observer?.takeRecords();
+    conversionScheduler.discardRecords();
     if (observe) startWatching();
 
     const usedMeta = [...bases]
@@ -311,64 +388,22 @@
   function startDiscovering(onFound) {
     if (!settings?.enabled || !document.body || typeof MutationObserver === "undefined") return;
     discoveryCallback = onFound;
-    if (discoveryObserver) return;
-    discoveryObserver = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.type === "characterData") {
-          queueDiscoveryRoot(mutation.target);
-          continue;
-        }
-        for (const node of mutation.addedNodes) queueDiscoveryRoot(node);
-      }
-      if (discoveryRoots.size) scheduleDiscoveryScan();
-    });
-    discoveryObserver.observe(document.body, { childList: true, characterData: true, subtree: true });
+    discoveryScheduler.start(document.body);
   }
 
-  function queueDiscoveryRoot(node) {
-    const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    if (!element || element.nodeType !== Node.ELEMENT_NODE || isOwnedElement(element)) return;
-    if (discoveryRoots.size >= MAX_PENDING_ROOTS) {
-      discoveryRoots.clear();
-      discoveryRoots.add(document.body);
-      return;
-    }
-    discoveryRoots.add(element);
-  }
-
-  function scheduleDiscoveryScan() {
-    if (discoveryHandle !== null) return;
-    const run = () => {
-      discoveryHandle = null;
-      if (!discoveryRoots.size || !settings?.enabled) return;
-      const roots = [...discoveryRoots];
-      discoveryRoots.clear();
-      const detection = detectPagePrices({ roots });
-      if (!detection.found) return;
-      const callback = discoveryCallback;
-      stopDiscovering();
-      prefetchRates(detection.currencies).catch(() => {});
-      callback?.(detection);
-    };
-    if (typeof window.requestIdleCallback === "function") {
-      discoveryUsesIdleCallback = true;
-      discoveryHandle = window.requestIdleCallback(run, { timeout: 300 });
-    } else {
-      discoveryUsesIdleCallback = false;
-      discoveryHandle = window.setTimeout(run, 75);
-    }
+  function inspectDiscoveryRoots(roots) {
+    if (!roots.length || !settings?.enabled) return;
+    const detection = detectPagePrices({ roots });
+    if (!detection.found) return;
+    const callback = discoveryCallback;
+    stopDiscovering();
+    prefetchRates(detection.currencies).catch(() => {});
+    callback?.(detection);
   }
 
   function stopDiscovering() {
-    discoveryObserver?.disconnect();
-    discoveryObserver = null;
+    discoveryScheduler.stop();
     discoveryCallback = null;
-    if (discoveryHandle !== null) {
-      if (discoveryUsesIdleCallback) window.cancelIdleCallback(discoveryHandle);
-      else window.clearTimeout(discoveryHandle);
-    }
-    discoveryHandle = null;
-    discoveryRoots.clear();
   }
 
   function collectOpenRoots(root, output) {
@@ -593,7 +628,7 @@
   }
 
   function isCurrentRun(generation, runSettings) {
-    return generation === conversionGeneration && settings === runSettings && runSettings?.enabled;
+    return generation === conversionGeneration && settings?.enabled && runSettings?.enabled;
   }
 
   function cancelledConversionResult() {
@@ -643,7 +678,7 @@
     const converted = createConvertedBadge(match, { adjacent: true });
     badge.appendChild(converted);
     element.appendChild(badge);
-    renderedConversions.add(badge);
+    conversionRegistry.add(badge);
     return 1;
   }
 
@@ -666,7 +701,7 @@
       adjacent: settings.displayMode !== "replace"
     });
     wrapper.append(original, converted);
-    renderedConversions.add(wrapper);
+    conversionRegistry.add(wrapper);
     return wrapper;
   }
 
@@ -680,22 +715,15 @@
   }
 
   function applyConvertedAppearance(converted, { adjacent }) {
-    const textColor = HEX_COLOR_PATTERN.test(settings?.convertedTextColor || "")
-      ? settings.convertedTextColor
-      : DEFAULT_CONVERTED_APPEARANCE.textColor;
-    const backgroundColor = HEX_COLOR_PATTERN.test(settings?.convertedBackgroundColor || "")
-      ? settings.convertedBackgroundColor
-      : DEFAULT_CONVERTED_APPEARANCE.backgroundColor;
-    const shape = Object.hasOwn(CONVERTED_SHAPE_RADII, settings?.convertedShape)
-      ? settings.convertedShape
-      : DEFAULT_CONVERTED_APPEARANCE.shape;
+    const appearance = CurrencySettings.normalizeAppearance(settings);
+    const shape = appearance.convertedShape;
 
     converted.dataset.ccpShape = shape;
     for (const [property, value] of Object.entries({
       display: "inline-block",
-      color: textColor,
-      "background-color": backgroundColor,
-      "border-radius": CONVERTED_SHAPE_RADII[shape],
+      color: appearance.convertedTextColor,
+      "background-color": appearance.convertedBackgroundColor,
+      "border-radius": CurrencySettings.SHAPE_RADII[shape],
       "font-weight": "700",
       "margin-inline-start": adjacent ? "0.28em" : "0",
       padding: "0.08em 0.34em",
@@ -703,6 +731,23 @@
     })) {
       converted.style.setProperty(property, value, "important");
     }
+  }
+
+  function updateConvertedPresentation(wrapper, nextSettings) {
+    const appended = wrapper.dataset.ccpAppended === "true";
+    const displayMode = nextSettings.displayMode === "replace" ? "replace" : "beside";
+    if (!appended) {
+      wrapper.dataset.displayMode = displayMode;
+      wrapper.querySelector(".ccp-original")?.style.setProperty(
+        "display",
+        displayMode === "replace" ? "none" : "inline",
+        "important"
+      );
+    }
+    const converted = wrapper.querySelector(".ccp-badge");
+    if (converted) applyConvertedAppearance(converted, {
+      adjacent: appended || displayMode !== "replace"
+    });
   }
 
   function conversionTitle(baseCurrency) {
@@ -725,54 +770,22 @@
   }
 
   function startWatching() {
-    if (observer || !document.body || typeof MutationObserver === "undefined") return;
-    observedUrl = window.location.href;
-    observer = new MutationObserver(handleMutations);
-    observer.observe(document.body, { childList: true, characterData: true, subtree: true });
-    observeOpenShadowRoots(document.body);
+    if (!document.body || typeof MutationObserver === "undefined") return;
+    if (conversionScheduler.start(document.body)) observedUrl = window.location.href;
   }
 
-  function handleMutations(mutations) {
+  function handleObservedMutations(_mutations, scheduler) {
     if (!settings?.enabled) return;
     if (window.location.href !== observedUrl) {
       observedUrl = window.location.href;
       CurrencyDetector.resetPageCurrencyDetection();
-      pendingRoots.add(document.body);
+      scheduler.queue(document.body);
     }
-
-    for (const mutation of mutations) {
-      if (mutation.type === "characterData") {
-        queueMutationRoot(mutation.target);
-        continue;
-      }
-      for (const node of mutation.addedNodes) queueMutationRoot(node);
-    }
-    if (pendingRoots.size) schedulePendingConversion();
   }
 
-  function queueMutationRoot(node) {
-    const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    if (!element || element.nodeType !== Node.ELEMENT_NODE || isOwnedElement(element)) return;
-    if (pendingRoots.size >= MAX_PENDING_ROOTS) {
-      pendingRoots.clear();
-      pendingRoots.add(document.body);
-      return;
-    }
-    pendingRoots.add(element);
-  }
-
-  function observeOpenShadowRoots(root) {
-    if (!observer || !root) return;
-    const candidates = [];
-    if (root.shadowRoot) candidates.push(root.shadowRoot);
-    root.querySelectorAll?.("*").forEach((element) => {
-      if (element.shadowRoot) candidates.push(element.shadowRoot);
-    });
-    for (const shadowRoot of candidates) {
-      if (observedShadowRoots.has(shadowRoot)) continue;
-      observedShadowRoots.add(shadowRoot);
-      observer.observe(shadowRoot, { childList: true, characterData: true, subtree: true });
-    }
+  async function convertMutationRoots(roots) {
+    if (!roots.length || !settings?.enabled) return;
+    await runSiteConversion({ clearExisting: false, observe: true, roots }).catch(() => {});
   }
 
   function isOwnedElement(element) {
@@ -780,33 +793,8 @@
       element.closest?.(`${OWNED_SELECTOR}, ${UI_SELECTOR}`));
   }
 
-  function schedulePendingConversion() {
-    if (observerHandle !== null) return;
-    const run = async () => {
-      observerHandle = null;
-      if (!pendingRoots.size || !settings?.enabled) return;
-      const roots = [...pendingRoots];
-      pendingRoots.clear();
-      await runSiteConversion({ clearExisting: false, observe: true, roots }).catch(() => {});
-    };
-    if (typeof window.requestIdleCallback === "function") {
-      observerUsesIdleCallback = true;
-      observerHandle = window.requestIdleCallback(run, { timeout: 750 });
-    } else {
-      observerUsesIdleCallback = false;
-      observerHandle = window.setTimeout(run, 150);
-    }
-  }
-
   function stopWatching() {
-    observer?.disconnect();
-    observer = null;
-    if (observerHandle !== null) {
-      if (observerUsesIdleCallback) window.cancelIdleCallback(observerHandle);
-      else window.clearTimeout(observerHandle);
-    }
-    observerHandle = null;
-    pendingRoots.clear();
+    conversionScheduler.stop();
   }
 
   function isRendered(element) {
@@ -827,17 +815,7 @@
   }
 
   function removeConversionsOnly() {
-    for (const wrapper of [...renderedConversions]) {
-      renderedConversions.delete(wrapper);
-      if (!wrapper.isConnected) continue;
-      if (wrapper.dataset.ccpAppended === "true") {
-        wrapper.remove();
-      } else {
-        wrapper.replaceWith(document.createTextNode(
-          wrapper.querySelector(".ccp-original")?.textContent || ""
-        ));
-      }
-    }
+    conversionRegistry.restoreAll();
   }
 
   function clearConversions() {
@@ -848,19 +826,21 @@
 
   function cancelPendingConversion() {
     conversionGeneration += 1;
-    pendingRoots.clear();
+    conversionScheduler.clearPending();
+    if (queuedConversion) {
+      const result = cancelledConversionResult();
+      for (const waiter of queuedConversion.waiters) waiter.resolve(result);
+      queuedConversion = null;
+    }
   }
 
   function hasConversions() {
-    for (const wrapper of [...renderedConversions]) {
-      if (wrapper.isConnected) return true;
-      renderedConversions.delete(wrapper);
-    }
-    return false;
+    return conversionRegistry.hasAny();
   }
 
   global.CurrencyPageConverter = Object.freeze({
     configure,
+    updatePresentation,
     runSiteConversion,
     convertSelectionText,
     clearConversions,

@@ -2,9 +2,9 @@
 
 Currency Converter Pro is a privacy-focused Chrome and Firefox extension that converts prices on shopping pages into a currency you understand.
 
-**Current version:** 1.9.1 · **Platforms:** Chrome and Firefox Manifest V3 · **License:** MIT
+**Current version:** 1.9.2 · **Platforms:** Chrome and Firefox Manifest V3 · **License:** MIT
 
-[![Chrome Web Store](https://img.shields.io/badge/Chrome-Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/) [![Chrome build](https://img.shields.io/badge/Chrome-Build-4285F4?logo=googlechrome&logoColor=white)](release/1.9.1/currency-converter-pro-1.9.1-chrome.zip) [![Firefox build](https://img.shields.io/badge/Firefox-Build-FF7139?logo=firefoxbrowser&logoColor=white)](release/1.9.1/currency-converter-pro-1.9.1-firefox.zip)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome-Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/) [![Chrome build](https://img.shields.io/badge/Chrome-Build-4285F4?logo=googlechrome&logoColor=white)](release/1.9.2/currency-converter-pro-1.9.2-chrome.zip) [![Firefox build](https://img.shields.io/badge/Firefox-Build-FF7139?logo=firefoxbrowser&logoColor=white)](release/1.9.2/currency-converter-pro-1.9.2-firefox.zip)
 
 **[View the complete changelog →](CHANGELOG.md)**
 
@@ -29,7 +29,7 @@ Currency Converter Pro is a privacy-focused Chrome and Firefox extension that co
 ## Installation
 
 - **Store installation:** Install Currency Converter Pro from the [Chrome Web Store](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) or [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/).
-- **Manual installation:** Download the latest [Chrome build](release/1.9.1/currency-converter-pro-1.9.1-chrome.zip) or [Firefox build](release/1.9.1/currency-converter-pro-1.9.1-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
+- **Manual installation:** Download the latest [Chrome build](release/1.9.2/currency-converter-pro-1.9.2-chrome.zip) or [Firefox build](release/1.9.2/currency-converter-pro-1.9.2-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
 
 ## 🧭 How to use it
 
@@ -183,6 +183,7 @@ The build composes `manifests/base.json` with the selected browser override and 
 
 | Version | Highlights | Download |
 | --- | --- | --- |
+| 1.9.2 | Behavior-preserving runtime refactor with more reliable SPA mutation scheduling, queued conversions, and in-place appearance updates | [Chrome](release/1.9.2/currency-converter-pro-1.9.2-chrome.zip) · [Firefox](release/1.9.2/currency-converter-pro-1.9.2-firefox.zip) |
 | 1.9.1 | Fixed Chrome and Firefox toolbar popup sizing, scrolling, and browser-native control rendering | [Chrome](release/1.9.1/currency-converter-pro-1.9.1-chrome.zip) · [Firefox](release/1.9.1/currency-converter-pro-1.9.1-firefox.zip) |
 | 1.9.0 | Custom converted-price colors and shapes, live before-and-after preview, WCAG contrast guidance, and one-click reset | [Chrome](release/1.9.0/currency-converter-pro-1.9.0-chrome.zip) · [Firefox](release/1.9.0/currency-converter-pro-1.9.0-firefox.zip) |
 | 1.8.0 | Always-on local price detection, price-gated on-page prompts, background rate prefetching, and instant stale-cache use while rates refresh | [Chrome](release/1.8.0/currency-converter-pro-1.8.0-chrome.zip) · [Firefox](release/1.8.0/currency-converter-pro-1.8.0-firefox.zip) |
@@ -202,17 +203,17 @@ See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
 
 ```text
 src/          Shared extension runtime used by both browsers
-  background/ Shared logic plus the small Chrome service-worker entry
-  content/    Detection, parsing, conversion, dynamic scanning, and page UI
+  background/ Listener/router entry plus settings, site-preference, page-action, catalog, and rate services
+  content/    Detection and conversion runtime, conversion registry, bounded mutation scheduler, and page UI
   icons/      Extension icons
-  popup/      Popup interface and searchable currency controls
-  shared/     Browser API adapter, currencies, and message names
+  popup/      Popup UI, settings reconciliation controller, and manifest-derived fallback resources
+  shared/     Browser adapter, currency catalog, canonical settings schema, messages, and page-access rules
 manifests/    Common manifest plus Chrome and Firefox overrides
 dist/         Generated unpacked browser builds (not committed)
 release/      Versioned Chrome and Firefox release archives
 screenshots/  Images used by this README
 scripts/      Manifest composition, validation, icon, and release utilities
-tests/        Unit, regression, fixture, service-worker, and Playwright tests
+tests/        Unit, integration, fixture, Chrome Playwright, and Firefox runtime tests
 ```
 
 ## 📄 License

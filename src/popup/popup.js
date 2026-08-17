@@ -38,22 +38,9 @@ const quickSourceRequiredNode = document.getElementById("quickSourceRequired");
 const chooseQuickSourceButton = document.getElementById("chooseQuickSource");
 const currencyNames = new Intl.DisplayNames([navigator.language || "en"], { type: "currency" });
 const M = CurrencyMessages;
-const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
-const DEFAULT_APPEARANCE = Object.freeze({
-  convertedTextColor: "#166534",
-  convertedBackgroundColor: "#dcfce7",
-  convertedShape: "rounded"
-});
-const SHAPE_RADII = Object.freeze({
-  square: "0",
-  rounded: "0.35em",
-  pill: "999px"
-});
-const CONTENT_SCRIPT_FILES = [
-  "/shared/browser-api.js", "/shared/currencies.js", "/shared/messages.js", "/content/number-parser.js",
-  "/content/detector.js", "/content/converter.js", "/content/page-ui.js", "/content/content.js"
-];
-const CONTENT_STYLE_FILES = ["/content/styles.css"];
+const contentScriptResources = CurrencyPopupContentScriptResources.fromManifest(
+  ExtensionAPI.runtime.getManifest()
+);
 let activeTab = null;
 let siteStatus = null;
 let lastDetectedCurrency = null;
@@ -70,12 +57,22 @@ let pageConversionError = null;
 let primaryActionBusy = false;
 let popupReady = false;
 let popupLocked = false;
-let confirmedSettings = null;
-let settingsWriteRevision = 0;
-let settingsDraftRevision = 0;
-let latestSettingsWrite = Promise.resolve(true);
-let latestDispatchedSettingsWrite = Promise.resolve(null);
 const defaultRememberSiteHelp = rememberSiteHelpNode.textContent;
+const settingsController = CurrencyPopupSettingsController.create({
+  normalize: CurrencySettings.normalizeSnapshot,
+  matches: CurrencySettings.snapshotEquals,
+  persist: dispatchSettingsUpdate,
+  reload: fetchActualSettings,
+  apply: applySettingsToControls,
+  status: setStatus,
+  lock: lockPopupInteractions,
+  onSaved: finalizeSavedSettings,
+  reportError: (phase, error) => {
+    const action = phase === "persist" ? "confirm the settings update" : "reload the current settings";
+    console.error(`Currency Converter Pro could not ${action}.`, error);
+  },
+  describeError: errorMessage
+});
 const currencyComboboxes = [
   createCurrencyCombobox(fromCurrencySelect, fromCurrencySearch, fromCurrencyList),
   createCurrencyCombobox(toCurrencySelect, toCurrencySearch, toCurrencyList)
@@ -108,10 +105,8 @@ async function initialize() {
   catalogWarning = currenciesResult.warning || null;
   recentCurrencies = localPreferences.recentCurrencies || [];
   populateCurrencyLists();
-  confirmedSettings = normalizeSettingsSnapshot(settingsResult.settings);
-  if (!confirmedSettings) throw new Error("The extension returned invalid settings.");
-  latestDispatchedSettingsWrite = Promise.resolve({ ok: true, settings: confirmedSettings });
-  const settings = confirmedSettings;
+  const settings = settingsController.initialize(settingsResult.settings);
+  if (!settings) throw new Error("The extension returned invalid settings.");
   enabledInput.checked = settings.enabled;
   fromCurrencySelect.value = settings.fromCurrency;
   toCurrencySelect.value = settings.toCurrency;
@@ -128,9 +123,7 @@ async function initialize() {
   const activeHostname = safeUrl(activePageUrl)?.hostname;
   rememberSiteHelpNode.textContent = statusResult?.ok
     ? activeHostname
-      ? statusResult.requiresPermission === false
-        ? `Converts prices automatically on ${activeHostname}. Price scanning stays on this device.`
-        : `Allows automatic conversion on ${activeHostname}. Your browser will ask once; page contents stay on this device, and you can remove access here.`
+      ? `Converts prices automatically on ${activeHostname}. Price scanning stays on this device.`
       : defaultRememberSiteHelp
     : statusResult?.error || "This page cannot be remembered.";
   clearSiteButton.hidden = !statusResult?.cleanupRequired;
@@ -365,7 +358,7 @@ function bindAppearanceControls() {
     });
   }
   resetAppearanceButton.addEventListener("click", () => {
-    applyAppearanceSettings(DEFAULT_APPEARANCE);
+    applyAppearanceSettings(CurrencySettings.DEFAULTS);
     saveSettings();
   });
 }
@@ -380,7 +373,7 @@ function bindColorControl(colorInput, hexInput) {
   colorInput.addEventListener("change", () => saveSettings());
   hexInput.addEventListener("input", () => {
     markSettingsDraft();
-    const color = normalizeHexColor(hexInput.value);
+    const color = CurrencySettings.normalizeHexColor(hexInput.value.trim());
     if (!color) {
       hexInput.setAttribute("aria-invalid", "true");
       return;
@@ -390,7 +383,7 @@ function bindColorControl(colorInput, hexInput) {
     updateAppearancePreview();
   });
   hexInput.addEventListener("change", () => {
-    const color = normalizeHexColor(hexInput.value);
+    const color = CurrencySettings.normalizeHexColor(hexInput.value.trim());
     if (!color) {
       hexInput.setAttribute("aria-invalid", "true");
       hexInput.setCustomValidity("Enter a six-digit hex color, for example #166534.");
@@ -411,27 +404,19 @@ function clearHexColorError(input) {
 }
 
 function markSettingsDraft() {
-  settingsDraftRevision += 1;
-}
-
-function normalizeHexColor(value) {
-  const candidate = String(value || "").trim();
-  return HEX_COLOR_PATTERN.test(candidate) ? candidate.toLowerCase() : null;
+  settingsController.markDraft();
 }
 
 function selectedConvertedShape() {
   return convertedShapeInputs.find((input) => input.checked)?.value ||
-    DEFAULT_APPEARANCE.convertedShape;
+    CurrencySettings.DEFAULTS.convertedShape;
 }
 
 function applyAppearanceSettings(settings, { announce = true } = {}) {
-  const textColor = normalizeHexColor(settings?.convertedTextColor) ||
-    DEFAULT_APPEARANCE.convertedTextColor;
-  const backgroundColor = normalizeHexColor(settings?.convertedBackgroundColor) ||
-    DEFAULT_APPEARANCE.convertedBackgroundColor;
-  const shape = Object.hasOwn(SHAPE_RADII, settings?.convertedShape)
-    ? settings.convertedShape
-    : DEFAULT_APPEARANCE.convertedShape;
+  const appearance = CurrencySettings.normalizeAppearance(settings);
+  const textColor = appearance.convertedTextColor;
+  const backgroundColor = appearance.convertedBackgroundColor;
+  const shape = appearance.convertedShape;
 
   convertedTextColorInput.value = textColor;
   convertedTextColorHexInput.value = textColor.toUpperCase();
@@ -444,12 +429,13 @@ function applyAppearanceSettings(settings, { announce = true } = {}) {
 }
 
 function updateAppearancePreview({ announce = true } = {}) {
-  const textColor = normalizeHexColor(convertedTextColorInput.value) ||
-    DEFAULT_APPEARANCE.convertedTextColor;
-  const backgroundColor = normalizeHexColor(convertedBackgroundColorInput.value) ||
-    DEFAULT_APPEARANCE.convertedBackgroundColor;
+  const textColor = CurrencySettings.normalizeHexColor(convertedTextColorInput.value) ||
+    CurrencySettings.DEFAULTS.convertedTextColor;
+  const backgroundColor = CurrencySettings.normalizeHexColor(convertedBackgroundColorInput.value) ||
+    CurrencySettings.DEFAULTS.convertedBackgroundColor;
   const shape = selectedConvertedShape();
-  const radius = SHAPE_RADII[shape] || SHAPE_RADII.rounded;
+  const radius = CurrencySettings.SHAPE_RADII[shape] ||
+    CurrencySettings.SHAPE_RADII[CurrencySettings.DEFAULTS.convertedShape];
 
   appearancePreviewNode.style.color = textColor;
   appearancePreviewNode.style.backgroundColor = backgroundColor;
@@ -519,60 +505,11 @@ function updateAppearanceResetState() {
 }
 
 function saveSettings({ syncPage = true } = {}) {
-  const revision = ++settingsWriteRevision;
-  const draftRevision = settingsDraftRevision;
   const payload = readSettingsFromControls();
-  const validationError = validateSettingsPayload(payload);
-  let outcomePromise;
-  if (validationError) {
-    outcomePromise = reconcileLocalValidationFailure(validationError);
-  } else {
-    outcomePromise = persistSettingsPayload(payload);
-    latestDispatchedSettingsWrite = outcomePromise;
-  }
-  const completion = outcomePromise.then((outcome) => {
-    if (revision !== settingsWriteRevision || draftRevision !== settingsDraftRevision) {
-      return Boolean(outcome?.ok);
-    }
-    return settleSettingsOutcome(outcome, payload, { revision, syncPage });
-  }).catch((error) => {
-    if (revision === settingsWriteRevision && draftRevision === settingsDraftRevision) {
-      lockPopupInteractions(
-        `Settings could not be saved or reloaded. ${errorMessage(error)} Close and reopen the popup to try again.`
-      );
-    }
-    return false;
+  return settingsController.save(payload, {
+    validationError: validateSettingsPayload(payload),
+    syncPage
   });
-  const waitForLatest = completion.then((saved) => {
-    if (revision === settingsWriteRevision) return saved;
-    return latestSettingsWrite;
-  });
-  latestSettingsWrite = waitForLatest;
-  return waitForLatest;
-}
-
-async function reconcileLocalValidationFailure(validationError) {
-  const pendingWrite = latestDispatchedSettingsWrite;
-  let priorOutcome = null;
-  try {
-    priorOutcome = await pendingWrite;
-  } catch (_error) {
-    // Reload below if an unexpected write failure escaped normal reconciliation.
-  }
-  const priorSettings = normalizeSettingsSnapshot(priorOutcome?.settings);
-  const actualSettings = priorSettings || await fetchActualSettings();
-  if (!actualSettings && priorOutcome?.fatal) {
-    return {
-      ok: false,
-      fatal: true,
-      error: `${validationError} ${priorOutcome.error || "Current settings could not be reloaded."}`
-    };
-  }
-  return {
-    ok: false,
-    settings: actualSettings || confirmedSettings,
-    error: validationError
-  };
 }
 
 function handleInitializationFailure(error) {
@@ -647,100 +584,43 @@ function validateSettingsPayload(payload) {
     return "Choose a currency from the suggestion list.";
   }
   if (payload.fromCurrency === payload.toCurrency) return "Choose two different currencies.";
-  if (!normalizeHexColor(payload.convertedTextColor) ||
-      !normalizeHexColor(payload.convertedBackgroundColor)) {
+  if (!CurrencySettings.normalizeHexColor(payload.convertedTextColor) ||
+      !CurrencySettings.normalizeHexColor(payload.convertedBackgroundColor)) {
     return "Use six-digit hex colors such as #166534.";
   }
-  if (!Object.hasOwn(SHAPE_RADII, payload.convertedShape)) {
+  if (!CurrencySettings.CONVERTED_SHAPES.includes(payload.convertedShape)) {
     return "Choose a supported converted-price shape.";
   }
   return null;
 }
 
-async function persistSettingsPayload(payload) {
-  let result;
-  try {
-    result = await ExtensionAPI.runtime.sendMessage({
-      type: M.UPDATE_SETTINGS,
-      origin: activeTab?.url,
-      payload
-    });
-  } catch (error) {
-    console.error("Currency Converter Pro could not confirm the settings update.", error);
-    return reconcileSettingsAfterAmbiguousFailure(payload);
-  }
-
-  const returnedSettings = normalizeSettingsSnapshot(result?.settings);
-  if (result?.ok === true && returnedSettings) {
-    return { ok: true, settings: returnedSettings };
-  }
-  if (result?.ok === false && returnedSettings) {
-    return {
-      ok: false,
-      settings: returnedSettings,
-      error: result.error || "Could not save settings."
-    };
-  }
-  return reconcileSettingsAfterAmbiguousFailure(payload, result?.error);
-}
-
-async function reconcileSettingsAfterAmbiguousFailure(payload, reportedError) {
-  const actualSettings = await fetchActualSettings();
-  if (!actualSettings) {
-    return {
-      ok: false,
-      fatal: true,
-      error: "The settings update could not be confirmed, and the current settings could not be reloaded. Close and reopen the popup to try again."
-    };
-  }
-  if (settingsSnapshotsMatch(actualSettings, payload)) {
-    return { ok: true, settings: actualSettings, reconciled: true };
-  }
-  return {
-    ok: false,
-    settings: actualSettings,
-    error: reportedError
-      ? `${reportedError} The popup reloaded the current settings.`
-      : "The settings update could not be confirmed. The popup reloaded the current settings."
-  };
+function dispatchSettingsUpdate(payload) {
+  return ExtensionAPI.runtime.sendMessage({
+    type: M.UPDATE_SETTINGS,
+    origin: activeTab?.url,
+    payload
+  });
 }
 
 async function fetchActualSettings() {
-  try {
-    const result = await ExtensionAPI.runtime.sendMessage({
-      type: M.GET_SETTINGS,
-      origin: activeTab?.url
-    });
-    return result?.ok ? normalizeSettingsSnapshot(result.settings) : null;
-  } catch (error) {
-    console.error("Currency Converter Pro could not reload the current settings.", error);
-    return null;
-  }
+  const result = await ExtensionAPI.runtime.sendMessage({
+    type: M.GET_SETTINGS,
+    origin: activeTab?.url
+  });
+  return result?.ok ? result.settings : null;
 }
 
-async function settleSettingsOutcome(outcome, payload, { revision, syncPage }) {
-  if (!outcome.ok) {
-    if (outcome.settings) {
-      confirmedSettings = normalizeSettingsSnapshot(outcome.settings);
-      applySettingsToControls(confirmedSettings);
-    }
-    if (outcome.fatal) lockPopupInteractions(outcome.error);
-    else setStatus(outcome.error || "Could not save settings.", "error");
-    return false;
-  }
-
-  confirmedSettings = normalizeSettingsSnapshot(outcome.settings) || payload;
-  applySettingsToControls(confirmedSettings);
+async function finalizeSavedSettings(settings, { syncPage, isCurrent }) {
   try {
-    await storeRecentCurrencies(confirmedSettings);
+    await storeRecentCurrencies(settings);
   } catch (_error) {
     // Recent currencies are a convenience and do not affect whether the settings were saved.
   }
-  if (revision !== settingsWriteRevision) return true;
+  if (!isCurrent()) return;
 
   scheduleQuickConversion({ immediate: true });
   setStatus(
-    confirmedSettings.enabled
+    settings.enabled
       ? "Webpage conversion is ready."
       : siteStatus?.remembered
         ? "Converter is off. Automatic conversion is paused; the site choice remains."
@@ -749,55 +629,18 @@ async function settleSettingsOutcome(outcome, payload, { revision, syncPage }) {
   );
   if (syncPage) {
     const pageResult = await sendToActivePage(
-      confirmedSettings.enabled ? M.SHOW_CONVERT_PROMPT : M.CLEAR_SITE_CONVERSION,
-      confirmedSettings.enabled ? {} : { suppressPrompt: true }
+      settings.enabled ? M.SHOW_CONVERT_PROMPT : M.CLEAR_SITE_CONVERSION,
+      settings.enabled ? {} : { suppressPrompt: true }
     );
-    if (revision !== settingsWriteRevision) return true;
+    if (!isCurrent()) return;
     if (!pageResult?.ok) setStatus(pageResult?.error || "This page cannot be accessed.", "error");
-    else if (!confirmedSettings.enabled) {
+    else if (!settings.enabled) {
       clearPageButton.disabled = true;
       clearPageButton.hidden = true;
       updateSecondaryActions();
     }
   }
   updateSiteState();
-  return true;
-}
-
-function normalizeSettingsSnapshot(settings) {
-  if (!settings || typeof settings !== "object" ||
-      typeof settings.enabled !== "boolean" ||
-      typeof settings.fromCurrency !== "string" ||
-      typeof settings.toCurrency !== "string" ||
-      typeof settings.displayMode !== "string" ||
-      !normalizeHexColor(settings.convertedTextColor) ||
-      !normalizeHexColor(settings.convertedBackgroundColor) ||
-      !Object.hasOwn(SHAPE_RADII, settings.convertedShape) ||
-      typeof settings.showPagePrompt !== "boolean") {
-    return null;
-  }
-  return {
-    enabled: settings.enabled,
-    fromCurrency: settings.fromCurrency,
-    toCurrency: settings.toCurrency,
-    displayMode: settings.displayMode,
-    convertedTextColor: normalizeHexColor(settings.convertedTextColor),
-    convertedBackgroundColor: normalizeHexColor(settings.convertedBackgroundColor),
-    convertedShape: settings.convertedShape,
-    showPagePrompt: settings.showPagePrompt
-  };
-}
-
-function settingsSnapshotsMatch(left, right) {
-  return Boolean(left && right) &&
-    left.enabled === right.enabled &&
-    left.fromCurrency === right.fromCurrency &&
-    left.toCurrency === right.toCurrency &&
-    left.displayMode === right.displayMode &&
-    left.convertedTextColor === right.convertedTextColor &&
-    left.convertedBackgroundColor === right.convertedBackgroundColor &&
-    left.convertedShape === right.convertedShape &&
-    left.showPagePrompt === right.showPagePrompt;
 }
 
 function applySettingsToControls(settings) {
@@ -837,38 +680,27 @@ function updateSwapState() {
 
 async function handleRememberSiteChange() {
   const origin = getActiveOrigin();
-  if (!origin || !siteStatus?.pattern) {
+  if (!origin || !siteStatus?.ok) {
     rememberSiteInput.checked = false;
     setStatus("This page cannot be remembered.", "error");
     return;
   }
 
   rememberSiteInput.disabled = true;
-  let newlyGrantedPattern = null;
   let setupFailureState = null;
   try {
     if (rememberSiteInput.checked) {
-      if (siteStatus.requiresPermission !== false) {
-        const granted = await ExtensionAPI.permissions.request({ origins: [siteStatus.pattern] });
-        if (!granted) {
-          rememberSiteInput.checked = false;
-          setStatus("Access was not granted. Automatic conversion is still off.", "error");
-          return;
-        }
-        newlyGrantedPattern = siteStatus.pattern;
-      }
       const result = await ExtensionAPI.runtime.sendMessage({ type: M.REMEMBER_SITE, origin });
       if (!result?.ok) {
         setupFailureState = result;
         siteStatus.remembered = Boolean(result?.remembered);
-        siteStatus.hasPermission = result?.permissionRemaining === true;
-        siteStatus.revocablePermission = result?.permissionRemaining === true;
+        siteStatus.cleanupRequired = Boolean(
+          result?.registrationRemaining || result?.dataRemaining
+        );
         throw new Error(result?.error || "Could not remember this site.");
       }
-      newlyGrantedPattern = null;
       siteStatus.remembered = true;
-      siteStatus.hasPermission = true;
-      siteStatus.revocablePermission = siteStatus.requiresPermission !== false;
+      siteStatus.cleanupRequired = false;
       clearSiteButton.hidden = true;
       updateSecondaryActions();
       setStatus(`Automatic conversion is on for ${safeUrl(origin)?.hostname || "this site"}.`, "success");
@@ -879,14 +711,16 @@ async function handleRememberSiteChange() {
       });
       const result = await ExtensionAPI.runtime.sendMessage({ type: M.FORGET_SITE, origin });
       if (!result?.ok) {
+        setupFailureState = result;
         siteStatus.remembered = Boolean(result?.remembered);
-        siteStatus.hasPermission = result?.permissionRemaining === true;
+        siteStatus.cleanupRequired = Boolean(
+          result?.registrationRemaining || result?.dataRemaining
+        );
         clearSiteButton.hidden = false;
         throw new Error(result?.error || "Could not disable automatic conversion for this site.");
       }
       siteStatus.remembered = false;
-      siteStatus.hasPermission = siteStatus.requiresPermission === false;
-      siteStatus.revocablePermission = false;
+      siteStatus.cleanupRequired = false;
       clearSiteButton.hidden = true;
       if (pageClearResult?.ok) {
         clearPageButton.disabled = true;
@@ -895,34 +729,14 @@ async function handleRememberSiteChange() {
       updateSecondaryActions();
       setStatus(
         pageClearResult?.ok
-          ? siteStatus.requiresPermission === false
-            ? `Automatic conversion is off for ${safeUrl(origin)?.hostname || "this site"}. Price detection remains available.`
-            : `Automatic conversion is off and access to ${safeUrl(origin)?.hostname || "this site"} was removed.`
-          : siteStatus.requiresPermission === false
-            ? "Automatic conversion is off. Reload this page if an existing conversion remains visible."
-            : "Site access was removed. Reload this page if an existing conversion remains visible.",
+          ? `Automatic conversion is off for ${safeUrl(origin)?.hostname || "this site"}. Price detection remains available.`
+          : "Automatic conversion is off. Reload this page if an existing conversion remains visible.",
         pageClearResult?.ok ? "success" : "warning"
       );
     }
   } catch (error) {
-    if (newlyGrantedPattern) {
-      try {
-        await ExtensionAPI.permissions.remove({ origins: [newlyGrantedPattern] });
-      } catch (_cleanupError) {
-        // The background also attempts rollback; the visible error still tells the user setup failed.
-      }
-      try {
-        const refreshed = await ExtensionAPI.runtime.sendMessage({
-          type: M.GET_SITE_STATUS,
-          origin
-        });
-        if (refreshed?.ok) siteStatus = refreshed;
-      } catch (_refreshError) {
-        // Keep the conservative failure state returned by the background.
-      }
-    }
     clearSiteButton.hidden = !(
-      siteStatus?.revocablePermission ||
+      siteStatus?.cleanupRequired ||
       setupFailureState?.registrationRemaining ||
       setupFailureState?.dataRemaining
     );
@@ -1012,8 +826,7 @@ async function clearWholeSite() {
   const result = await sendToActivePage(M.CLEAR_SITE_CONVERSION, { forgetSite: true });
   if (!result?.ok) {
     siteStatus.remembered = Boolean(result?.remembered);
-    siteStatus.hasPermission = result?.permissionRemaining === true;
-    siteStatus.revocablePermission = result?.permissionRemaining === true;
+    siteStatus.cleanupRequired = true;
     rememberSiteInput.checked = Boolean(result?.remembered);
     clearSiteButton.hidden = false;
     updateSecondaryActions();
@@ -1022,7 +835,7 @@ async function clearWholeSite() {
     return;
   }
   siteStatus.remembered = false;
-  siteStatus.hasPermission = false;
+  siteStatus.cleanupRequired = false;
   rememberSiteInput.checked = false;
   moveFocusBeforeHiding(clearSiteButton);
   clearSiteButton.hidden = true;
@@ -1266,14 +1079,25 @@ async function ensureContentScripts(tabId) {
     // The converter is not loaded in this document yet.
   }
 
-  try {
-    await ExtensionAPI.scripting.insertCSS({ target: { tabId }, files: CONTENT_STYLE_FILES });
-  } catch (error) {
-    throw new Error(`The page styles could not be loaded: ${errorMessage(error)}`);
+  if (contentScriptResources.css.length) {
+    try {
+      await ExtensionAPI.scripting.insertCSS({
+        target: { tabId },
+        files: contentScriptResources.css
+      });
+    } catch (error) {
+      throw new Error(`The page styles could not be loaded: ${errorMessage(error)}`);
+    }
   }
 
   try {
-    await ExtensionAPI.scripting.executeScript({ target: { tabId }, files: CONTENT_SCRIPT_FILES });
+    if (!contentScriptResources.js.length) {
+      throw new Error("The extension manifest does not define page converter scripts.");
+    }
+    await ExtensionAPI.scripting.executeScript({
+      target: { tabId },
+      files: contentScriptResources.js
+    });
   } catch (error) {
     throw new Error(`The page converter could not be loaded: ${errorMessage(error)}`);
   }

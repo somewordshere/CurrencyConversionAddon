@@ -57,14 +57,21 @@
     "r", "fr", "fr.", "kr", "dh", "sr", "lei", "ft", "rp", "rm", "rs",
     "ksh", "qr", "kd", "bd", "ro", "jd"
   ]);
+  const currencyFormatters = new Map();
 
   function formatCurrencyAmount(amount, currency) {
     const meta = CURRENCY_META[currency];
     const locale = meta?.locale || "en-US";
-    return new Intl.NumberFormat(locale, {
-      style: "currency",
-      currency
-    }).format(amount);
+    const key = `${locale}:${currency}`;
+    let formatter = currencyFormatters.get(key);
+    if (!formatter) {
+      formatter = new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency
+      });
+      currencyFormatters.set(key, formatter);
+    }
+    return formatter.format(amount);
   }
 
   global.CurrencyCatalog = Object.freeze({

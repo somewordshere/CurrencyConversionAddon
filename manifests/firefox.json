@@ -3,10 +3,14 @@
     "scripts": [
       "shared/browser-api.js",
       "shared/currencies.js",
+      "shared/settings.js",
       "shared/messages.js",
       "shared/page-access.js",
       "background/catalog.js",
       "background/rates.js",
+      "background/site-preferences.js",
+      "background/settings-service.js",
+      "background/page-actions.js",
       "background/main.js"
     ]
   },

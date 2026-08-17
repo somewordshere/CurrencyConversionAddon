@@ -5,6 +5,33 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
+const baseManifest = readJson("manifests/base.json");
+const firefoxOverride = readJson("manifests/firefox.json");
+const firefoxManifest = { ...baseManifest, ...firefoxOverride };
+
+const DEFAULT_SYNC_SETTINGS = {
+  enabled: true,
+  fromCurrency: "AUTO",
+  toCurrency: "EUR",
+  displayMode: "beside",
+  convertedTextColor: "#166534",
+  convertedBackgroundColor: "#dcfce7",
+  convertedShape: "rounded",
+  showPagePrompt: true
+};
+
+function readJson(relativePath) {
+  return JSON.parse(fs.readFileSync(path.join(root, relativePath), "utf8"));
+}
+
+function clone(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function plain(value) {
+  return clone(value);
+}
+
 function createEvent() {
   const listeners = [];
   return {
@@ -13,58 +40,355 @@ function createEvent() {
     },
     emit(...args) {
       return listeners.map((listener) => listener(...args));
+    },
+    get listenerCount() {
+      return listeners.length;
     }
   };
 }
 
-const runtimeOnInstalled = createEvent();
-const runtimeOnStartup = createEvent();
-const runtimeOnMessage = createEvent();
-const permissionsOnRemoved = createEvent();
-const contextMenusOnClicked = createEvent();
-const commandsOnCommand = createEvent();
-const storageOnChanged = createEvent();
-const context = vm.createContext({
-  console,
-  URL,
-  setTimeout,
-  clearTimeout,
-  AbortController,
-  fetch: async () => ({ ok: false, status: 503 }),
-  ExtensionAPI: {
-    runtime: {
-      onInstalled: runtimeOnInstalled,
-      onStartup: runtimeOnStartup,
-      onMessage: runtimeOnMessage,
-      getManifest: () => ({ browser_specific_settings: { gecko: { id: "test@example" } } })
+async function emitAndWait(event, ...args) {
+  return Promise.all(event.emit(...args));
+}
+
+function selectStoredValues(store, keys) {
+  if (keys == null) return clone(store);
+  if (typeof keys === "string") return { [keys]: clone(store[keys]) };
+  if (Array.isArray(keys)) {
+    return Object.fromEntries(keys.map((key) => [key, clone(store[key])]));
+  }
+  return Object.fromEntries(Object.entries(keys).map(([key, fallback]) => [
+    key,
+    Object.hasOwn(store, key) ? clone(store[key]) : clone(fallback)
+  ]));
+}
+
+function createStorageArea(store) {
+  return {
+    async get(keys) {
+      return selectStoredValues(store, keys);
     },
-    permissions: { onRemoved: permissionsOnRemoved },
-    contextMenus: { onClicked: contextMenusOnClicked },
-    commands: { onCommand: commandsOnCommand },
-    storage: { onChanged: storageOnChanged },
-    tabs: {},
-    scripting: {},
-    action: {}
+    async set(values) {
+      for (const [key, value] of Object.entries(clone(values))) store[key] = value;
+    },
+    async remove(keys) {
+      for (const key of Array.isArray(keys) ? keys : [keys]) delete store[key];
+    }
+  };
+}
+
+function createBackground({
+  sync = DEFAULT_SYNC_SETTINGS,
+  local = {},
+  registered = [],
+  entrypoint = "firefox"
+} = {}) {
+  const syncStore = clone(sync);
+  const localStore = clone(local);
+  let registeredScripts = clone(registered);
+  const injected = { css: [], js: [] };
+  const events = {
+    installed: createEvent(),
+    startup: createEvent(),
+    message: createEvent(),
+    contextMenu: createEvent(),
+    command: createEvent()
+  };
+  const extensionApi = {
+    runtime: {
+      onInstalled: events.installed,
+      onStartup: events.startup,
+      onMessage: events.message,
+      getManifest: () => firefoxManifest
+    },
+    contextMenus: {
+      onClicked: events.contextMenu,
+      async removeAll() {},
+      create() {}
+    },
+    commands: { onCommand: events.command },
+    storage: {
+      sync: createStorageArea(syncStore),
+      local: createStorageArea(localStore)
+    },
+    tabs: {
+      async query() { return []; },
+      async sendMessage() { return { ok: true }; }
+    },
+    scripting: {
+      async getRegisteredContentScripts({ ids } = {}) {
+        const scripts = ids
+          ? registeredScripts.filter((script) => ids.includes(script.id))
+          : registeredScripts;
+        return clone(scripts);
+      },
+      async unregisterContentScripts({ ids }) {
+        registeredScripts = registeredScripts.filter((script) => !ids.includes(script.id));
+      },
+      async insertCSS(value) {
+        injected.css.push(clone(value));
+      },
+      async executeScript(value) {
+        injected.js.push(clone(value));
+      }
+    },
+    action: {
+      async setBadgeBackgroundColor() {},
+      async setBadgeText() {}
+    }
+  };
+  const globals = {
+    console,
+    URL,
+    Error,
+    Date,
+    Intl,
+    Object,
+    Promise,
+    AbortController,
+    encodeURIComponent,
+    setTimeout,
+    clearTimeout,
+    fetch: async () => ({ ok: false, status: 503 })
+  };
+  globals[entrypoint === "chrome" ? "chrome" : "browser"] = extensionApi;
+  const context = vm.createContext(globals);
+  const loadedScripts = [];
+
+  function evaluateRuntimeFile(file, filename = `src/${file}`) {
+    vm.runInContext(
+      fs.readFileSync(path.join(root, "src", file), "utf8"),
+      context,
+      { filename }
+    );
+  }
+
+  if (entrypoint === "chrome") {
+    const sourceRoot = path.join(root, "src");
+    const workerRoot = path.join(sourceRoot, "background");
+    context.importScripts = (...files) => {
+      for (const file of files) {
+        const target = path.resolve(workerRoot, file);
+        const relativePath = path.relative(sourceRoot, target).replaceAll("\\", "/");
+        assert.equal(
+          relativePath.startsWith("../"),
+          false,
+          `Chrome worker imported a script outside src: ${file}`
+        );
+        loadedScripts.push(relativePath);
+        evaluateRuntimeFile(relativePath);
+      }
+    };
+    evaluateRuntimeFile("background/chrome-worker.js");
+  } else {
+    for (const file of firefoxManifest.background.scripts) {
+      loadedScripts.push(file);
+      evaluateRuntimeFile(file);
+    }
+  }
+
+  return {
+    context,
+    events,
+    injected,
+    localStore,
+    syncStore,
+    loadedScripts,
+    get registeredScripts() {
+      return clone(registeredScripts);
+    }
+  };
+}
+
+function stubCatalog(
+  context,
+  codes = ["EUR", "PLN", "USD"],
+  rateService = context.CurrencyRateService
+) {
+  const catalogService = {
+    async getCurrencies() {
+      return { currencies: codes.map((code) => ({ code })) };
+    }
+  };
+  context.CurrencySettingsService = context.CurrencySettingsService.create({
+    api: context.ExtensionAPI,
+    catalogService,
+    rateService,
+    currencyCatalog: context.CurrencyCatalog,
+    settingsSchema: context.CurrencySettings,
+    sitePreferences: context.CurrencySitePreferences
+  });
+}
+
+test("service-worker tests use the released merged Firefox manifest", () => {
+  const { context } = createBackground();
+  assert.deepEqual(
+    firefoxManifest.content_scripts[0].matches,
+    ["http://*/*", "https://*/*"]
+  );
+  assert.equal(firefoxManifest.content_scripts[0].run_at, "document_idle");
+  assert.equal(firefoxManifest.browser_specific_settings.gecko.strict_min_version, "140.0");
+  assert.equal(context.ExtensionAPI, context.browser);
+  assert.equal(Object.hasOwn(context.ExtensionAPI, "permissions"), false);
+});
+
+test("Chrome worker executes the same classic-script graph and listener bootstrap as Firefox", () => {
+  const chromeBackground = createBackground({ entrypoint: "chrome" });
+  const firefoxBackground = createBackground();
+  const serviceGlobals = [
+    "CurrencySitePreferences",
+    "CurrencySettingsService",
+    "CurrencyPageActions",
+    "CurrencyBackground"
+  ];
+
+  assert.deepEqual(chromeBackground.loadedScripts, firefoxManifest.background.scripts);
+  assert.deepEqual(chromeBackground.loadedScripts, firefoxBackground.loadedScripts);
+  assert.equal(chromeBackground.context.ExtensionAPI, chromeBackground.context.chrome);
+  assert.equal(Object.hasOwn(chromeBackground.context, "browser"), false);
+  for (const name of serviceGlobals) {
+    assert.equal(typeof chromeBackground.context[name], typeof firefoxBackground.context[name]);
+    assert.equal(typeof chromeBackground.context[name], "object");
+  }
+  for (const name of ["installed", "startup", "message", "contextMenu", "command"]) {
+    assert.equal(chromeBackground.events[name].listenerCount, 1, `${name} listener was not installed`);
+    assert.equal(
+      chromeBackground.events[name].listenerCount,
+      firefoxBackground.events[name].listenerCount,
+      `${name} listener count differs between Chrome and Firefox`
+    );
   }
 });
 
-for (const file of [
-  "src/shared/currencies.js",
-  "src/shared/messages.js",
-  "src/shared/page-access.js",
-  "src/background/catalog.js",
-  "src/background/rates.js",
-  "src/background/main.js"
-]) {
-  vm.runInContext(
-    fs.readFileSync(path.join(root, file), "utf8"),
-    context,
-    { filename: file }
+test("onInstalled initializes defaults, the context menu, and reconciliation in order", async () => {
+  const origin = "https://shop.example";
+  const background = createBackground({
+    sync: {},
+    local: {
+      favoriteCurrencies: ["EUR", "USD"],
+      autoConvertSites: { [origin]: true },
+      siteSourceCurrencies: { [origin]: "USD" },
+      siteAccessResetNotice: true,
+      siteAccessResetPending: true
+    },
+    registered: [
+      { id: "ccp_site_stale" },
+      { id: "unrelated_script" }
+    ]
+  });
+  const { context } = background;
+  const api = context.ExtensionAPI;
+  const order = [];
+  const createdMenus = [];
+  const originalLocalRemove = api.storage.local.remove;
+  const originalGetRegisteredContentScripts = api.scripting.getRegisteredContentScripts;
+
+  context.CurrencyCatalogService = Object.freeze({
+    async getCurrencies() {
+      return {
+        currencies: ["EUR", "USD"].map((code) => ({ code }))
+      };
+    }
+  });
+  api.storage.local.remove = async (keys) => {
+    await originalLocalRemove(keys);
+    if (keys === "favoriteCurrencies") order.push("defaults");
+  };
+  api.contextMenus.create = (menu) => {
+    createdMenus.push(plain(menu));
+    order.push("context-menu");
+  };
+  api.scripting.getRegisteredContentScripts = async (options) => {
+    order.push("reconcile");
+    return originalGetRegisteredContentScripts(options);
+  };
+
+  await emitAndWait(background.events.installed, { reason: "install" });
+
+  assert.deepEqual(order, ["defaults", "context-menu", "reconcile"]);
+  assert.deepEqual(background.syncStore, DEFAULT_SYNC_SETTINGS);
+  assert.deepEqual(createdMenus, [{
+    id: "convert-selection",
+    title: "Convert selected currency",
+    contexts: ["selection"]
+  }]);
+  assert.equal(background.localStore.favoriteCurrencies, undefined);
+  assert.equal(background.localStore.siteAccessResetNotice, undefined);
+  assert.equal(background.localStore.siteAccessResetPending, undefined);
+  assert.deepEqual(background.registeredScripts, [{ id: "unrelated_script" }]);
+  assert.deepEqual(background.localStore.autoConvertSites, { [origin]: true });
+  assert.deepEqual(background.localStore.siteSourceCurrencies, { [origin]: "USD" });
+});
+
+test("onStartup delegates to remembered-site reconciliation", async () => {
+  const origin = "https://shop.example";
+  const background = createBackground({
+    local: {
+      autoConvertSites: {
+        [origin]: true,
+        "not a site": true
+      },
+      siteSourceCurrencies: {
+        [origin]: "USD",
+        "https://unused.example": "EUR"
+      },
+      siteAccessResetPending: true
+    },
+    registered: [
+      { id: "ccp_site_startup" },
+      { id: "unrelated_script" }
+    ]
+  });
+
+  await emitAndWait(background.events.startup);
+  await background.context.CurrencySitePreferences.waitForMutations();
+
+  assert.deepEqual(background.registeredScripts, [{ id: "unrelated_script" }]);
+  assert.deepEqual(background.localStore.autoConvertSites, { [origin]: true });
+  assert.deepEqual(background.localStore.siteSourceCurrencies, { [origin]: "USD" });
+  assert.equal(background.localStore.siteAccessResetPending, undefined);
+});
+
+test("context-menu and keyboard events delegate page actions for supported tabs", async () => {
+  const background = createBackground();
+  const { context, events, injected } = background;
+  const sentMessages = [];
+  const tabQueries = [];
+  context.ExtensionAPI.tabs.sendMessage = async (tabId, message) => {
+    sentMessages.push({ tabId, message: plain(message) });
+    return { ok: true };
+  };
+
+  await emitAndWait(
+    events.contextMenu,
+    { menuItemId: "convert-selection", selectionText: "$10" },
+    { id: 17, url: "https://shop.example/product" }
   );
-}
+
+  assert.deepEqual(sentMessages, [
+    { tabId: 17, message: { type: context.CurrencyMessages.CONTENT_READY } },
+    { tabId: 17, message: { type: context.CurrencyMessages.CONVERT_SELECTION } }
+  ]);
+
+  sentMessages.length = 0;
+  context.ExtensionAPI.tabs.query = async (query) => {
+    tabQueries.push(plain(query));
+    return [{ id: 23, url: "http://shop.example/cart" }];
+  };
+
+  await emitAndWait(events.command, "convert-page");
+
+  assert.deepEqual(tabQueries, [{ active: true, currentWindow: true }]);
+  assert.deepEqual(sentMessages, [
+    { tabId: 23, message: { type: context.CurrencyMessages.CONTENT_READY } },
+    { tabId: 23, message: { type: context.CurrencyMessages.RUN_SITE_CONVERSION } }
+  ]);
+  assert.deepEqual(injected, { css: [], js: [] });
+});
 
 test("settings are restricted to supported values", () => {
-  const invalid = context.sanitizeSettings({
+  const { context } = createBackground();
+  const invalid = context.CurrencySettings.sanitize({
     enabled: "yes",
     fromCurrency: "BTC",
     toCurrency: "DOGE",
@@ -73,20 +397,11 @@ test("settings are restricted to supported values", () => {
     convertedBackgroundColor: "#12345g",
     convertedShape: "cloud",
     showPagePrompt: "yes"
-  });
-  assert.deepEqual(JSON.parse(JSON.stringify(invalid)), {
-    enabled: true,
-    fromCurrency: "AUTO",
-    toCurrency: "EUR",
-    displayMode: "beside",
-    convertedTextColor: "#166534",
-    convertedBackgroundColor: "#dcfce7",
-    convertedShape: "rounded",
-    showPagePrompt: true
-  });
+  }, ["EUR", "PLN", "USD"]);
+  assert.deepEqual(plain(invalid), DEFAULT_SYNC_SETTINGS);
 
-  const valid = context.sanitizeSettings({
-    enabled: true,
+  const valid = context.CurrencySettings.sanitize({
+    enabled: false,
     fromCurrency: "USD",
     toCurrency: "PLN",
     displayMode: "replace",
@@ -94,310 +409,232 @@ test("settings are restricted to supported values", () => {
     convertedBackgroundColor: "#123456",
     convertedShape: "pill",
     showPagePrompt: false
+  }, ["EUR", "PLN", "USD"]);
+  assert.deepEqual(plain(valid), {
+    enabled: false,
+    fromCurrency: "USD",
+    toCurrency: "PLN",
+    displayMode: "replace",
+    convertedTextColor: "#abcdef",
+    convertedBackgroundColor: "#123456",
+    convertedShape: "pill",
+    showPagePrompt: false
   });
-  assert.equal(valid.enabled, true);
-  assert.equal(valid.displayMode, "replace");
-  assert.equal(valid.convertedTextColor, "#abcdef");
-  assert.equal(valid.convertedBackgroundColor, "#123456");
-  assert.equal(valid.convertedShape, "pill");
-  assert.equal(valid.showPagePrompt, false);
-
-  const providerExpanded = context.sanitizeSettings({
-    enabled: true,
-    fromCurrency: "AFN",
-    toCurrency: "XAU",
-    displayMode: "beside",
-    showPagePrompt: true
-  }, ["AFN", "EUR", "XAU"]);
-  assert.equal(providerExpanded.fromCurrency, "AFN");
-  assert.equal(providerExpanded.toCurrency, "XAU");
 });
 
-test("remembered-site access is normalized to one web origin", () => {
-  const site = context.normalizeSite("https://shop.example/product?id=1");
-  assert.deepEqual(JSON.parse(JSON.stringify(site)), {
+test("always-on site normalization accepts ordinary origins and non-default ports", () => {
+  const { context } = createBackground();
+  assert.deepEqual(plain(context.CurrencySitePreferences.normalizeSite("https://shop.example/product?id=1")), {
     origin: "https://shop.example",
     hostname: "shop.example",
     pattern: "https://shop.example/*"
   });
-  assert.equal(context.normalizeSite("chrome://extensions"), null);
-  assert.equal(context.normalizeSite("file:///tmp/shop.html"), null);
-  assert.equal(context.siteScriptId(site.origin), context.siteScriptId(site.origin));
-  assert.notEqual(context.siteScriptId(site.origin), context.siteScriptId("https://other.example"));
+  assert.deepEqual(plain(context.CurrencySitePreferences.normalizeSite("http://localhost:3000/product")), {
+    origin: "http://localhost:3000",
+    hostname: "localhost",
+    pattern: "http://localhost:3000/*"
+  });
+  assert.equal(context.CurrencySitePreferences.normalizeSite("file:///tmp/shop.html"), null);
+  assert.match(
+    context.CurrencySitePreferences.siteMemoryError("file:///tmp/shop.html"),
+    /Only normal HTTP and HTTPS/
+  );
 });
 
-test("content script paths suit registration and one-off injection", async () => {
-  const originalTabsSendMessage = context.ExtensionAPI.tabs.sendMessage;
-  const originalGetRegistered = context.ExtensionAPI.scripting.getRegisteredContentScripts;
-  const originalRegister = context.ExtensionAPI.scripting.registerContentScripts;
-  const originalInsertCss = context.ExtensionAPI.scripting.insertCSS;
-  const originalExecuteScript = context.ExtensionAPI.scripting.executeScript;
-  let registration;
-  let cssInjection;
-  let scriptInjection;
-
-  context.ExtensionAPI.scripting.getRegisteredContentScripts = async () => [];
-  context.ExtensionAPI.scripting.registerContentScripts = async ([value]) => {
-    registration = value;
-  };
+test("fallback injection derives its ordered files from the declarative manifest", async () => {
+  const background = createBackground();
+  const { context, injected } = background;
   context.ExtensionAPI.tabs.sendMessage = async () => {
     throw new Error("Content script is not loaded yet.");
   };
-  context.ExtensionAPI.scripting.insertCSS = async (value) => {
-    cssInjection = value;
-  };
-  context.ExtensionAPI.scripting.executeScript = async (value) => {
-    scriptInjection = value;
-  };
 
-  try {
-    await context.registerSiteContentScript({
-      origin: "https://shop.example",
-      pattern: "https://shop.example/*"
-    });
-    await context.ensureContentScripts(42);
+  await context.CurrencyPageActions.ensureContentScripts(42);
 
-    assert.ok(registration.js.every((file) => !file.startsWith("/")));
-    assert.ok(registration.css.every((file) => !file.startsWith("/")));
-    assert.ok(scriptInjection.files.every((file) => file.startsWith("/")));
-    assert.ok(cssInjection.files.every((file) => file.startsWith("/")));
-    assert.equal(scriptInjection.target.tabId, 42);
-  } finally {
-    context.ExtensionAPI.tabs.sendMessage = originalTabsSendMessage;
-    context.ExtensionAPI.scripting.getRegisteredContentScripts = originalGetRegistered;
-    context.ExtensionAPI.scripting.registerContentScripts = originalRegister;
-    context.ExtensionAPI.scripting.insertCSS = originalInsertCss;
-    context.ExtensionAPI.scripting.executeScript = originalExecuteScript;
-  }
+  assert.deepEqual(injected.css, [{
+    target: { tabId: 42 },
+    files: firefoxManifest.content_scripts[0].css.map((file) => `/${file}`)
+  }]);
+  assert.deepEqual(injected.js, [{
+    target: { tabId: 42 },
+    files: firefoxManifest.content_scripts[0].js.map((file) => `/${file}`)
+  }]);
 });
 
-test("Firefox rejects remembered-site patterns with non-default ports", () => {
-  assert.equal(context.normalizeSite("https://shop.example:8443/product"), null);
-  assert.equal(context.normalizeSite("http://localhost:3000/"), null);
-  assert.match(context.siteMemoryError("https://shop.example:8443/product"), /non-default port/);
-
-  assert.equal(context.normalizeSite("https://shop.example:443/product").pattern, "https://shop.example/*");
-  assert.equal(context.normalizeSite("http://shop.example:80/product").pattern, "http://shop.example/*");
+test("fallback injection is skipped when the declarative content script responds", async () => {
+  const { context, injected } = createBackground();
+  await context.CurrencyPageActions.ensureContentScripts(7);
+  assert.deepEqual(injected, { css: [], js: [] });
 });
 
-test("Firefox always-on page access supports websites with non-default ports", () => {
-  const getManifest = context.ExtensionAPI.runtime.getManifest;
-  context.ExtensionAPI.runtime.getManifest = () => ({
-    browser_specific_settings: { gecko: { id: "test@example" } },
-    content_scripts: [{ matches: ["http://*/*", "https://*/*"] }]
-  });
-  try {
-    const site = context.normalizeSite("http://localhost:3000/product");
-    assert.deepEqual(JSON.parse(JSON.stringify(site)), {
-      origin: "http://localhost:3000",
-      hostname: "localhost",
-      pattern: "http://localhost:3000/*"
-    });
-  } finally {
-    context.ExtensionAPI.runtime.getManifest = getManifest;
-  }
-});
-
-test("Chrome keeps exact remembered-site patterns with non-default ports", () => {
-  const getManifest = context.ExtensionAPI.runtime.getManifest;
-  context.ExtensionAPI.runtime.getManifest = () => ({});
-  try {
-    const site = context.normalizeSite("https://shop.example:8443/product");
-    assert.deepEqual(JSON.parse(JSON.stringify(site)), {
-      origin: "https://shop.example:8443",
-      hostname: "shop.example",
-      pattern: "https://shop.example:8443/*"
-    });
-  } finally {
-    context.ExtensionAPI.runtime.getManifest = getManifest;
-  }
-});
-
-test("site source currency is retained only for an approved remembered origin", async () => {
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  const stored = {
-    autoConvertSites: {},
-    siteSourceCurrencies: {}
-  };
-  context.ExtensionAPI.storage.local = {
-    async get(key) {
-      return { [key]: stored[key] };
-    },
-    async set(value) {
-      Object.assign(stored, JSON.parse(JSON.stringify(value)));
+test("site status reflects an automatic-conversion preference without permission state", async () => {
+  const origin = "https://shop.example";
+  const { context } = createBackground({
+    local: {
+      autoConvertSites: { [origin]: true },
+      siteSourceCurrencies: { [origin]: "USD" }
     }
+  });
+
+  const result = await context.CurrencySitePreferences.getStatus(`${origin}/product`);
+
+  assert.deepEqual(plain(result), {
+    ok: true,
+    origin,
+    pattern: `${origin}/*`,
+    hasPermission: true,
+    requiresPermission: false,
+    revocablePermission: false,
+    remembered: true,
+    registrationRemaining: false,
+    dataRemaining: true,
+    cleanupRequired: false
+  });
+});
+
+test("background message router delegates to the extracted services", async () => {
+  const origin = "https://shop.example";
+  const { context } = createBackground({
+    local: {
+      autoConvertSites: { [origin]: true },
+      siteSourceCurrencies: { [origin]: "USD" }
+    }
+  });
+
+  const status = await context.CurrencyBackground.handleMessage({
+    type: context.CurrencyMessages.GET_SITE_STATUS,
+    origin: `${origin}/product`
+  }, {});
+  const unknown = await context.CurrencyBackground.handleMessage({ type: "NOT_A_MESSAGE" }, {});
+
+  assert.equal(status.ok, true);
+  assert.equal(status.remembered, true);
+  assert.deepEqual(plain(unknown), { ok: false, error: "Unknown extension request." });
+});
+
+test("default settings service resolves swapped provider globals after worker load", async () => {
+  const background = createBackground();
+  const { context } = background;
+  let cachedCatalogCalls = 0;
+  let refreshedCatalogCalls = 0;
+  let rateCalls = 0;
+  const catalog = {
+    currencies: ["EUR", "USD", "ZZZ"].map((code) => ({ code })),
+    cached: true,
+    stale: false
   };
-  context.ExtensionAPI.permissions.contains = async () => true;
 
-  try {
-    const site = context.normalizeSite("https://shop.example/product");
-    assert.equal(await context.saveSiteSourceCurrency(site, "USD", ["EUR", "USD"]), false);
-    assert.deepEqual(stored.siteSourceCurrencies, {});
+  context.CurrencyCatalogService = Object.freeze({
+    async getCachedCurrencies() {
+      cachedCatalogCalls += 1;
+      return catalog;
+    },
+    async getCurrencies() {
+      refreshedCatalogCalls += 1;
+      return catalog;
+    }
+  });
+  context.CurrencyRateService = Object.freeze({
+    async getRates(baseCurrency) {
+      rateCalls += 1;
+      assert.equal(baseCurrency, "USD");
+      return { ok: true, rates: { USD: 1, ZZZ: 2 } };
+    }
+  });
 
-    stored.autoConvertSites[site.origin] = true;
-    assert.equal(await context.saveSiteSourceCurrency(site, "USD", ["EUR", "USD"]), true);
-    assert.deepEqual(stored.siteSourceCurrencies, { "https://shop.example": "USD" });
+  const result = await context.CurrencyBackground.handleMessage({
+    type: context.CurrencyMessages.UPDATE_SETTINGS,
+    origin: "https://shop.example/product",
+    payload: { fromCurrency: "USD", toCurrency: "ZZZ" }
+  });
 
-    const resolved = await context.resolveSettingsForOrigin(
-      {
-        enabled: true,
-        fromCurrency: "AUTO",
-        toCurrency: "EUR",
-        displayMode: "beside",
-        showPagePrompt: true
-      },
-      site.origin,
-      ["EUR", "USD"]
-    );
-    assert.equal(resolved.fromCurrency, "USD");
+  assert.equal(result.ok, true);
+  assert.equal(result.settings.fromCurrency, "USD");
+  assert.equal(result.settings.toCurrency, "ZZZ");
+  assert.equal(cachedCatalogCalls, 1);
+  assert.equal(refreshedCatalogCalls, 1);
+  assert.equal(rateCalls, 1);
+  assert.equal(background.syncStore.toCurrency, "ZZZ");
+});
 
-    await context.saveSiteSourceCurrency(site, "AUTO", ["EUR", "USD"]);
-    assert.deepEqual(stored.siteSourceCurrencies, { "https://shop.example": "AUTO" });
-    const autoResolved = await context.resolveSettingsForOrigin(
-      {
-        enabled: true,
-        fromCurrency: "EUR",
-        toCurrency: "USD",
-        displayMode: "beside",
-        showPagePrompt: true
-      },
-      site.origin,
-      ["EUR", "USD"]
-    );
-    assert.equal(autoResolved.fromCurrency, "AUTO");
-  } finally {
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-  }
+test("remembering a site stores its preference and current source mode", async () => {
+  const origin = "https://shop.example";
+  const background = createBackground({
+    sync: { ...DEFAULT_SYNC_SETTINGS, fromCurrency: "USD" },
+    local: { autoConvertSites: {}, siteSourceCurrencies: {} }
+  });
+  stubCatalog(background.context);
+  background.context.ExtensionAPI.scripting.getRegisteredContentScripts = async () => {
+    throw new Error("normal remember flow must not inspect dynamic registrations");
+  };
+
+  const result = await background.context.CurrencySettingsService.rememberSite(`${origin}/product`);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(background.localStore.autoConvertSites, { [origin]: true });
+  assert.deepEqual(background.localStore.siteSourceCurrencies, { [origin]: "USD" });
+  const resolved = await background.context.CurrencySitePreferences.resolveSettingsForOrigin(
+    DEFAULT_SYNC_SETTINGS,
+    origin,
+    ["EUR", "USD"]
+  );
+  assert.equal(resolved.fromCurrency, "USD");
 });
 
 test("global target change rejects a conflict with another remembered site's source", async () => {
-  const originalCatalog = context.CurrencyCatalogService;
-  const originalSync = context.ExtensionAPI.storage.sync;
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
   const otherOrigin = "https://other-shop.example";
-  const globalSettings = {
-    enabled: true,
-    fromCurrency: "AUTO",
-    toCurrency: "EUR",
-    displayMode: "beside",
-    showPagePrompt: true
-  };
-  const stored = {
-    autoConvertSites: { [otherOrigin]: true },
-    siteSourceCurrencies: { [otherOrigin]: "USD" }
-  };
+  const background = createBackground({
+    local: {
+      autoConvertSites: { [otherOrigin]: true },
+      siteSourceCurrencies: { [otherOrigin]: "USD" }
+    }
+  });
+  stubCatalog(background.context);
   let syncWriteCount = 0;
+  background.context.ExtensionAPI.storage.sync.set = async () => {
+    syncWriteCount += 1;
+  };
 
-  context.CurrencyCatalogService = {
-    getCurrencies: async () => ({
-      currencies: [{ code: "EUR" }, { code: "USD" }, { code: "PLN" }]
-    })
-  };
-  context.ExtensionAPI.storage.sync = {
-    async get() {
-      return { ...globalSettings };
-    },
-    async set() {
-      syncWriteCount += 1;
-    }
-  };
-  context.ExtensionAPI.storage.local = {
-    async get(key) {
-      return { [key]: JSON.parse(JSON.stringify(stored[key])) };
-    }
-  };
-  context.ExtensionAPI.permissions.contains = async ({ origins }) =>
-    origins[0] === `${otherOrigin}/*`;
+  const result = await background.context.CurrencySettingsService.updateSettings(
+    { toCurrency: "USD" },
+    "https://active-shop.example/product"
+  );
 
-  try {
-    const result = await context.updateSettings(
-      { toCurrency: "USD" },
-      "https://active-shop.example/product"
-    );
-    assert.equal(result.ok, false);
-    assert.match(result.error, /saved source for other-shop\.example/);
-    assert.equal(syncWriteCount, 0);
-  } finally {
-    context.CurrencyCatalogService = originalCatalog;
-    context.ExtensionAPI.storage.sync = originalSync;
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-  }
+  assert.equal(result.ok, false);
+  assert.match(result.error, /saved source for other-shop\.example/);
+  assert.equal(syncWriteCount, 0);
 });
 
 test("remembered-site source-only update does not write global sync settings", async () => {
-  const originalCatalog = context.CurrencyCatalogService;
-  const originalSync = context.ExtensionAPI.storage.sync;
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
   const origin = "https://shop.example";
-  const globalSettings = {
-    enabled: true,
-    fromCurrency: "AUTO",
-    toCurrency: "PLN",
-    displayMode: "beside",
-    showPagePrompt: true
-  };
-  const stored = {
-    autoConvertSites: { [origin]: true },
-    siteSourceCurrencies: { [origin]: "EUR" }
-  };
+  const background = createBackground({
+    sync: { ...DEFAULT_SYNC_SETTINGS, toCurrency: "PLN" },
+    local: {
+      autoConvertSites: { [origin]: true },
+      siteSourceCurrencies: { [origin]: "EUR" }
+    }
+  });
+  stubCatalog(background.context);
   let syncWriteCount = 0;
+  background.context.ExtensionAPI.storage.sync.set = async () => {
+    syncWriteCount += 1;
+  };
 
-  context.CurrencyCatalogService = {
-    getCurrencies: async () => ({
-      currencies: [{ code: "EUR" }, { code: "USD" }, { code: "PLN" }]
-    })
-  };
-  context.ExtensionAPI.storage.sync = {
-    async get() {
-      return { ...globalSettings };
-    },
-    async set() {
-      syncWriteCount += 1;
-    }
-  };
-  context.ExtensionAPI.storage.local = {
-    async get(key) {
-      return { [key]: JSON.parse(JSON.stringify(stored[key])) };
-    },
-    async set(value) {
-      Object.assign(stored, JSON.parse(JSON.stringify(value)));
-    }
-  };
-  context.ExtensionAPI.permissions.contains = async () => true;
+  const result = await background.context.CurrencySettingsService.updateSettings(
+    { fromCurrency: "AUTO" },
+    origin
+  );
 
-  try {
-    const result = await context.updateSettings({ fromCurrency: "AUTO" }, origin);
-    assert.equal(result.ok, true);
-    assert.equal(result.settings.fromCurrency, "AUTO");
-    assert.equal(syncWriteCount, 0);
-    assert.deepEqual(stored.siteSourceCurrencies, { [origin]: "AUTO" });
-  } finally {
-    context.CurrencyCatalogService = originalCatalog;
-    context.ExtensionAPI.storage.sync = originalSync;
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-  }
+  assert.equal(result.ok, true);
+  assert.equal(result.settings.fromCurrency, "AUTO");
+  assert.equal(syncWriteCount, 0);
+  assert.deepEqual(background.localStore.siteSourceCurrencies, { [origin]: "AUTO" });
 });
 
 test("settings updates remain ordered while pair validation is delayed", async () => {
-  const originalCatalog = context.CurrencyCatalogService;
-  const originalRates = context.CurrencyRateService;
-  const originalSync = context.ExtensionAPI.storage.sync;
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
   const origin = "https://shop.example/product";
-  const stored = {
-    enabled: true,
-    fromCurrency: "USD",
-    toCurrency: "EUR",
-    displayMode: "beside",
-    showPagePrompt: true
-  };
+  const background = createBackground({
+    sync: { ...DEFAULT_SYNC_SETTINGS, fromCurrency: "USD" }
+  });
   const writes = [];
   let rateCalls = 0;
   let signalValidationStarted;
@@ -409,800 +646,326 @@ test("settings updates remain ordered while pair validation is delayed", async (
   const delayedValidation = new Promise((resolve) => {
     releaseValidation = resolve;
   });
-
-  context.CurrencyCatalogService = {
-    getCurrencies: async () => ({
-      currencies: [{ code: "CHF" }, { code: "EUR" }, { code: "USD" }]
-    })
-  };
-  context.CurrencyRateService = {
-    getRates: async () => {
+  background.context.CurrencyRateService = {
+    async getRates() {
       rateCalls += 1;
-      if (rateCalls === 1) {
-        signalValidationStarted();
-        return delayedValidation;
-      }
-      return { ok: true, rates: { CHF: 1, EUR: 1.08 } };
+      signalValidationStarted();
+      return delayedValidation;
     }
   };
-  context.ExtensionAPI.storage.sync = {
-    async get() {
-      return { ...stored };
-    },
-    async set(value) {
-      const copy = JSON.parse(JSON.stringify(value));
-      writes.push(copy);
-      Object.assign(stored, copy);
-    }
+  stubCatalog(
+    background.context,
+    ["CHF", "EUR", "USD"],
+    background.context.CurrencyRateService
+  );
+  background.context.ExtensionAPI.storage.sync.set = async (value) => {
+    const copy = plain(value);
+    writes.push(copy);
+    Object.assign(background.syncStore, copy);
   };
-  context.ExtensionAPI.storage.local = {
-    async get(key) {
-      return { [key]: {} };
-    }
-  };
-  context.ExtensionAPI.permissions.contains = async () => false;
 
-  try {
-    const first = context.updateSettings({ fromCurrency: "CHF" }, origin);
-    await validationStarted;
-    const second = context.updateSettings({
-      fromCurrency: "CHF",
-      displayMode: "replace"
-    }, origin).then((result) => {
-      secondSettled = true;
-      return result;
-    });
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    const settledBeforeRelease = secondSettled;
+  const first = background.context.CurrencySettingsService.updateSettings(
+    { fromCurrency: "CHF" },
+    origin
+  );
+  await validationStarted;
+  const second = background.context.CurrencySettingsService.updateSettings({
+    fromCurrency: "CHF",
+    displayMode: "replace"
+  }, origin).then((result) => {
+    secondSettled = true;
+    return result;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(secondSettled, false);
 
-    releaseValidation({ ok: true, rates: { CHF: 1, EUR: 1.08 } });
-    const results = await Promise.all([first, second]);
+  releaseValidation({ ok: true, rates: { CHF: 1, EUR: 1.08 } });
+  const results = await Promise.all([first, second]);
 
-    assert.equal(results.every((result) => result.ok), true);
-    assert.equal(settledBeforeRelease, false);
-    assert.equal(rateCalls, 1);
-    assert.deepEqual(
-      writes.map((settings) => `${settings.fromCurrency}:${settings.displayMode}`),
-      ["CHF:beside", "CHF:replace"]
-    );
-    assert.equal(stored.fromCurrency, "CHF");
-    assert.equal(stored.displayMode, "replace");
-  } finally {
-    releaseValidation?.({ ok: true, rates: { CHF: 1, EUR: 1.08 } });
-    context.CurrencyCatalogService = originalCatalog;
-    context.CurrencyRateService = originalRates;
-    context.ExtensionAPI.storage.sync = originalSync;
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-  }
+  assert.equal(results.every((result) => result.ok), true);
+  assert.equal(rateCalls, 1);
+  assert.deepEqual(
+    writes.map((settings) => `${settings.fromCurrency}:${settings.displayMode}`),
+    ["CHF:beside", "CHF:replace"]
+  );
 });
 
 test("sync failure rolls back a remembered site's local source update", async () => {
-  const originalCatalog = context.CurrencyCatalogService;
-  const originalSync = context.ExtensionAPI.storage.sync;
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
   const origin = "https://shop.example";
-  const globalSettings = {
-    enabled: true,
-    fromCurrency: "AUTO",
-    toCurrency: "PLN",
-    displayMode: "beside",
-    showPagePrompt: true
-  };
-  const stored = {
-    autoConvertSites: { [origin]: true },
-    siteSourceCurrencies: { [origin]: "EUR" }
-  };
+  const background = createBackground({
+    sync: { ...DEFAULT_SYNC_SETTINGS, toCurrency: "PLN" },
+    local: {
+      autoConvertSites: { [origin]: true },
+      siteSourceCurrencies: { [origin]: "EUR" }
+    }
+  });
+  stubCatalog(background.context);
   const localWrites = [];
-  let syncWriteCount = 0;
+  const originalLocalSet = background.context.ExtensionAPI.storage.local.set;
+  background.context.ExtensionAPI.storage.local.set = async (value) => {
+    localWrites.push(plain(value));
+    await originalLocalSet(value);
+  };
+  background.context.ExtensionAPI.storage.sync.set = async () => {
+    throw new Error("sync unavailable");
+  };
 
-  context.CurrencyCatalogService = {
-    getCurrencies: async () => ({
-      currencies: [{ code: "EUR" }, { code: "USD" }, { code: "PLN" }]
-    })
-  };
-  context.ExtensionAPI.storage.sync = {
-    async get() {
-      return { ...globalSettings };
-    },
-    async set() {
-      syncWriteCount += 1;
-      throw new Error("sync unavailable");
-    }
-  };
-  context.ExtensionAPI.storage.local = {
-    async get(key) {
-      return { [key]: JSON.parse(JSON.stringify(stored[key])) };
-    },
-    async set(value) {
-      const copy = JSON.parse(JSON.stringify(value));
-      localWrites.push(copy);
-      Object.assign(stored, copy);
-    }
-  };
-  context.ExtensionAPI.permissions.contains = async () => true;
+  const result = await background.context.CurrencySettingsService.updateSettings({
+    fromCurrency: "AUTO",
+    displayMode: "replace"
+  }, origin);
 
-  try {
-    const result = await context.updateSettings({
-      fromCurrency: "AUTO",
-      displayMode: "replace"
-    }, origin);
-    assert.equal(result.ok, false);
-    assert.equal(result.partial, false);
-    assert.match(result.error, /Global settings were not saved/);
-    assert.equal(syncWriteCount, 1);
-    assert.equal(localWrites.length, 2);
-    assert.equal(localWrites[0].siteSourceCurrencies[origin], "AUTO");
-    assert.equal(localWrites[1].siteSourceCurrencies[origin], "EUR");
-    assert.deepEqual(stored.siteSourceCurrencies, { [origin]: "EUR" });
-    assert.equal(result.settings.fromCurrency, "EUR");
-    assert.equal(result.settings.displayMode, "beside");
-  } finally {
-    context.CurrencyCatalogService = originalCatalog;
-    context.ExtensionAPI.storage.sync = originalSync;
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-  }
+  assert.equal(result.ok, false);
+  assert.equal(result.partial, false);
+  assert.match(result.error, /Global settings were not saved/);
+  assert.equal(localWrites.length, 2);
+  assert.equal(localWrites[0].siteSourceCurrencies[origin], "AUTO");
+  assert.equal(localWrites[1].siteSourceCurrencies[origin], "EUR");
+  assert.deepEqual(background.localStore.siteSourceCurrencies, { [origin]: "EUR" });
 });
 
-test("remember setup rolls back registration state and permission on failure", async () => {
-  const originalCatalog = context.CurrencyCatalogService;
-  const originalSync = context.ExtensionAPI.storage.sync;
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  const originalRemove = context.ExtensionAPI.permissions.remove;
-  const originalGetRegistered = context.ExtensionAPI.scripting.getRegisteredContentScripts;
-  const originalRegister = context.ExtensionAPI.scripting.registerContentScripts;
+test("remember setup rolls back an uncertain local-storage write", async () => {
   const origin = "https://shop.example";
-  const stored = {
-    autoConvertSites: {},
-    siteSourceCurrencies: {}
-  };
-  let permissionGranted = true;
-  const registrationError = vm.runInContext('new Error("registration failed")', context);
-
-  context.CurrencyCatalogService = {
-    getCurrencies: async () => ({
-      currencies: [{ code: "EUR" }, { code: "USD" }]
-    })
-  };
-  context.ExtensionAPI.storage.sync = {
-    async get() {
-      return {
-        enabled: true,
-        fromCurrency: "USD",
-        toCurrency: "EUR",
-        displayMode: "beside",
-        showPagePrompt: true
-      };
-    }
-  };
-  context.ExtensionAPI.storage.local = {
-    async get(key) {
-      return { [key]: stored[key] };
-    },
-    async set(value) {
-      Object.assign(stored, JSON.parse(JSON.stringify(value)));
-    }
-  };
-  context.ExtensionAPI.permissions.contains = async () => permissionGranted;
-  context.ExtensionAPI.permissions.remove = async () => {
-    permissionGranted = false;
-    return true;
-  };
-  context.ExtensionAPI.scripting.getRegisteredContentScripts = async () => [];
-  context.ExtensionAPI.scripting.registerContentScripts = async () => {
-    throw registrationError;
+  const background = createBackground({
+    sync: { ...DEFAULT_SYNC_SETTINGS, fromCurrency: "USD" },
+    local: { autoConvertSites: {}, siteSourceCurrencies: {} }
+  });
+  stubCatalog(background.context);
+  const originalSet = background.context.ExtensionAPI.storage.local.set;
+  let writes = 0;
+  background.context.ExtensionAPI.storage.local.set = async (value) => {
+    writes += 1;
+    await originalSet(value);
+    if (writes === 1) throw new Error("setup storage result was uncertain");
   };
 
-  try {
-    const result = await context.rememberSite(origin);
-    assert.equal(result.ok, false);
-    assert.equal(result.remembered, false);
-    assert.equal(result.permissionRemaining, false);
-    assert.equal(result.registrationRemaining, false);
-    assert.equal(result.dataRemaining, false);
-    assert.match(result.error, /registration failed/);
-    assert.match(result.error, /permission was rolled back/);
-    assert.equal(permissionGranted, false);
-    assert.deepEqual(stored.autoConvertSites, {});
-    assert.deepEqual(stored.siteSourceCurrencies, {});
-  } finally {
-    context.CurrencyCatalogService = originalCatalog;
-    context.ExtensionAPI.storage.sync = originalSync;
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-    context.ExtensionAPI.permissions.remove = originalRemove;
-    context.ExtensionAPI.scripting.getRegisteredContentScripts = originalGetRegistered;
-    context.ExtensionAPI.scripting.registerContentScripts = originalRegister;
-  }
+  const result = await background.context.CurrencySettingsService.rememberSite(origin);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.remembered, false);
+  assert.equal(result.permissionRemaining, false);
+  assert.equal(result.registrationRemaining, false);
+  assert.equal(result.dataRemaining, false);
+  assert.match(result.error, /site setting was rolled back/);
+  assert.deepEqual(background.localStore.autoConvertSites, {});
+  assert.deepEqual(background.localStore.siteSourceCurrencies, {});
 });
 
-test("remember rollback reports permission, registration, and data that remain", async () => {
-  const originalCatalog = context.CurrencyCatalogService;
-  const originalSync = context.ExtensionAPI.storage.sync;
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  const originalRemove = context.ExtensionAPI.permissions.remove;
-  const originalGetRegistered = context.ExtensionAPI.scripting.getRegisteredContentScripts;
-  const originalRegister = context.ExtensionAPI.scripting.registerContentScripts;
-  const originalUnregister = context.ExtensionAPI.scripting.unregisterContentScripts;
+test("remember reports catalog failures without escaping the message contract", async () => {
   const origin = "https://shop.example";
-  const stored = {
-    autoConvertSites: {},
-    siteSourceCurrencies: {}
-  };
-  let registered = false;
-  let storageWriteCount = 0;
-
-  context.CurrencyCatalogService = {
-    getCurrencies: async () => ({
-      currencies: [{ code: "EUR" }, { code: "USD" }]
-    })
-  };
-  context.ExtensionAPI.storage.sync = {
-    async get() {
-      return {
-        enabled: true,
-        fromCurrency: "USD",
-        toCurrency: "EUR",
-        displayMode: "beside",
-        showPagePrompt: true
-      };
-    }
-  };
-  context.ExtensionAPI.storage.local = {
-    async get(key) {
-      return { [key]: JSON.parse(JSON.stringify(stored[key])) };
-    },
-    async set(value) {
-      storageWriteCount += 1;
-      if (storageWriteCount === 1) {
-        Object.assign(stored, JSON.parse(JSON.stringify(value)));
-        throw new Error("setup storage result was uncertain");
+  const background = createBackground({
+    local: { autoConvertSites: {}, siteSourceCurrencies: {} }
+  });
+  background.context.CurrencySettingsService = background.context.CurrencySettingsService.create({
+    api: background.context.ExtensionAPI,
+    catalogService: {
+      async getCurrencies() {
+        throw new Error("catalog unavailable");
       }
-      throw new Error("saved site data could not be removed");
-    }
-  };
-  context.ExtensionAPI.permissions.contains = async () => true;
-  context.ExtensionAPI.permissions.remove = async () => false;
-  context.ExtensionAPI.scripting.getRegisteredContentScripts = async () =>
-    registered ? [{ id: context.siteScriptId(origin) }] : [];
-  context.ExtensionAPI.scripting.registerContentScripts = async () => {
-    registered = true;
-  };
-  context.ExtensionAPI.scripting.unregisterContentScripts = async () => {
-    throw new Error("registration could not be removed");
-  };
-
-  try {
-    const result = await context.rememberSite(origin);
-    assert.equal(result.ok, false);
-    assert.equal(result.remembered, true);
-    assert.equal(result.permissionRemaining, true);
-    assert.equal(result.registrationRemaining, true);
-    assert.equal(result.dataRemaining, true);
-    assert.match(result.error, /Some site access remains/);
-    assert.equal(registered, true);
-    assert.deepEqual(stored.autoConvertSites, { [origin]: true });
-    assert.deepEqual(stored.siteSourceCurrencies, { [origin]: "USD" });
-  } finally {
-    context.CurrencyCatalogService = originalCatalog;
-    context.ExtensionAPI.storage.sync = originalSync;
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-    context.ExtensionAPI.permissions.remove = originalRemove;
-    context.ExtensionAPI.scripting.getRegisteredContentScripts = originalGetRegistered;
-    context.ExtensionAPI.scripting.registerContentScripts = originalRegister;
-    context.ExtensionAPI.scripting.unregisterContentScripts = originalUnregister;
-  }
-});
-
-test("concurrent Remember mutations retain both site maps", async () => {
-  const originalCatalog = context.CurrencyCatalogService;
-  const originalSync = context.ExtensionAPI.storage.sync;
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  const originalGetRegistered = context.ExtensionAPI.scripting.getRegisteredContentScripts;
-  const originalRegister = context.ExtensionAPI.scripting.registerContentScripts;
-  const originalUpdate = context.ExtensionAPI.scripting.updateContentScripts;
-  const origins = ["https://shop.example", "https://other.example"];
-  const stored = {
-    autoConvertSites: {},
-    siteSourceCurrencies: {}
-  };
-  let registered = [];
-  let activeWrites = 0;
-  let peakWrites = 0;
-
-  context.CurrencyCatalogService = {
-    getCurrencies: async () => ({ currencies: [{ code: "EUR" }, { code: "USD" }] })
-  };
-  context.ExtensionAPI.storage.sync = {
-    async get() {
-      return {
-        enabled: true,
-        fromCurrency: "USD",
-        toCurrency: "EUR",
-        displayMode: "beside",
-        showPagePrompt: true
-      };
-    }
-  };
-  context.ExtensionAPI.storage.local = {
-    async get(key) {
-      return { [key]: JSON.parse(JSON.stringify(stored[key])) };
     },
-    async set(value) {
-      activeWrites += 1;
-      peakWrites = Math.max(peakWrites, activeWrites);
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      Object.assign(stored, JSON.parse(JSON.stringify(value)));
-      activeWrites -= 1;
-    }
-  };
-  context.ExtensionAPI.permissions.contains = async () => true;
-  context.ExtensionAPI.scripting.getRegisteredContentScripts = async ({ ids } = {}) =>
-    ids ? registered.filter((script) => ids.includes(script.id)) : registered;
-  context.ExtensionAPI.scripting.registerContentScripts = async (scripts) => {
-    registered.push(...JSON.parse(JSON.stringify(scripts)));
-  };
-  context.ExtensionAPI.scripting.updateContentScripts = async () => {};
+    rateService: background.context.CurrencyRateService,
+    currencyCatalog: background.context.CurrencyCatalog,
+    settingsSchema: background.context.CurrencySettings,
+    sitePreferences: background.context.CurrencySitePreferences
+  });
 
-  try {
-    const results = await Promise.all(origins.map((origin) => context.rememberSite(origin)));
-    assert.equal(results.every((result) => result.ok), true);
-    assert.deepEqual(stored.autoConvertSites, {
-      [origins[0]]: true,
-      [origins[1]]: true
-    });
-    assert.deepEqual(stored.siteSourceCurrencies, {
-      [origins[0]]: "USD",
-      [origins[1]]: "USD"
-    });
-    assert.equal(peakWrites, 1);
-  } finally {
-    context.CurrencyCatalogService = originalCatalog;
-    context.ExtensionAPI.storage.sync = originalSync;
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-    context.ExtensionAPI.scripting.getRegisteredContentScripts = originalGetRegistered;
-    context.ExtensionAPI.scripting.registerContentScripts = originalRegister;
-    context.ExtensionAPI.scripting.updateContentScripts = originalUpdate;
-  }
+  const result = await background.context.CurrencySettingsService.rememberSite(origin);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.remembered, false);
+  assert.equal(result.dataRemaining, false);
+  assert.match(result.error, /catalog unavailable/);
+  assert.deepEqual(background.localStore.autoConvertSites, {});
+  assert.deepEqual(background.localStore.siteSourceCurrencies, {});
 });
 
-test("forget site removes registration, permission, preference, and source override", async () => {
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  const originalRemove = context.ExtensionAPI.permissions.remove;
-  const originalGetRegistered = context.ExtensionAPI.scripting.getRegisteredContentScripts;
-  const originalUnregister = context.ExtensionAPI.scripting.unregisterContentScripts;
+test("remember rollback reports saved data that could not be removed", async () => {
   const origin = "https://shop.example";
-  const stored = {
-    autoConvertSites: { [origin]: true },
-    siteSourceCurrencies: { [origin]: "USD" }
-  };
-  let removedPermission;
-  let unregisteredIds;
-  let permissionGranted = true;
-  let registrationPresent = true;
-
-  context.ExtensionAPI.storage.local = {
-    async get(key) {
-      return { [key]: stored[key] };
-    },
-    async set(value) {
-      Object.assign(stored, JSON.parse(JSON.stringify(value)));
+  const background = createBackground({
+    sync: { ...DEFAULT_SYNC_SETTINGS, fromCurrency: "USD" },
+    local: { autoConvertSites: {}, siteSourceCurrencies: {} }
+  });
+  stubCatalog(background.context);
+  const originalSet = background.context.ExtensionAPI.storage.local.set;
+  let writes = 0;
+  background.context.ExtensionAPI.storage.local.set = async (value) => {
+    writes += 1;
+    if (writes === 1) {
+      await originalSet(value);
+      throw new Error("setup storage result was uncertain");
     }
-  };
-  context.ExtensionAPI.permissions.contains = async () => permissionGranted;
-  context.ExtensionAPI.permissions.remove = async (value) => {
-    removedPermission = value;
-    permissionGranted = false;
-    return true;
-  };
-  context.ExtensionAPI.scripting.getRegisteredContentScripts = async () =>
-    registrationPresent ? [{ id: context.siteScriptId(origin) }] : [];
-  context.ExtensionAPI.scripting.unregisterContentScripts = async ({ ids }) => {
-    unregisteredIds = ids;
-    registrationPresent = false;
+    throw new Error("saved site data could not be removed");
   };
 
-  try {
-    const result = await context.forgetSite(`${origin}/product`);
-    assert.equal(result.ok, true);
-    assert.equal(result.remembered, false);
-    assert.equal(result.permissionRemaining, false);
-    assert.deepEqual(stored.autoConvertSites, {});
-    assert.deepEqual(stored.siteSourceCurrencies, {});
-    assert.deepEqual(JSON.parse(JSON.stringify(unregisteredIds)), [context.siteScriptId(origin)]);
-    assert.deepEqual(JSON.parse(JSON.stringify(removedPermission)), {
-      origins: [`${origin}/*`]
-    });
-  } finally {
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-    context.ExtensionAPI.permissions.remove = originalRemove;
-    context.ExtensionAPI.scripting.getRegisteredContentScripts = originalGetRegistered;
-    context.ExtensionAPI.scripting.unregisterContentScripts = originalUnregister;
-  }
+  const result = await background.context.CurrencySettingsService.rememberSite(origin);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.remembered, true);
+  assert.equal(result.permissionRemaining, false);
+  assert.equal(result.registrationRemaining, false);
+  assert.equal(result.dataRemaining, true);
+  assert.match(result.error, /Some saved site data remains/);
 });
 
-test("1.7.2 migration removes the legacy all-sites grant", async () => {
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  const originalRemove = context.ExtensionAPI.permissions.remove;
-  const granted = new Set(["http://*/*", "https://*/*"]);
-  const removed = [];
-  context.ExtensionAPI.permissions.contains = async ({ origins }) =>
-    origins.every((origin) => granted.has(origin));
-  context.ExtensionAPI.permissions.remove = async (value) => {
-    removed.push(JSON.parse(JSON.stringify(value)));
-    value.origins.forEach((origin) => granted.delete(origin));
-    return true;
-  };
+test("concurrent remember mutations retain both site preferences", async () => {
+  const firstOrigin = "https://first.example";
+  const secondOrigin = "https://second.example";
+  const background = createBackground({
+    sync: { ...DEFAULT_SYNC_SETTINGS, fromCurrency: "USD" },
+    local: { autoConvertSites: {}, siteSourceCurrencies: {} }
+  });
+  stubCatalog(background.context);
 
-  try {
-    await context.removeLegacyAllSitesPermission();
-    assert.deepEqual(removed, [
-      { origins: ["http://*/*"] },
-      { origins: ["https://*/*"] }
-    ]);
-    assert.deepEqual([...granted], []);
-  } finally {
-    context.ExtensionAPI.permissions.contains = originalContains;
-    context.ExtensionAPI.permissions.remove = originalRemove;
-  }
+  const results = await Promise.all([
+    background.context.CurrencySettingsService.rememberSite(firstOrigin),
+    background.context.CurrencySettingsService.rememberSite(secondOrigin)
+  ]);
+
+  assert.equal(results.every((result) => result.ok), true);
+  assert.deepEqual(background.localStore.autoConvertSites, {
+    [firstOrigin]: true,
+    [secondOrigin]: true
+  });
+  assert.deepEqual(background.localStore.siteSourceCurrencies, {
+    [firstOrigin]: "USD",
+    [secondOrigin]: "USD"
+  });
 });
 
-test("only 1.7.0 through 1.7.2 updates qualify for the reset notice", () => {
-  assert.equal(context.isLegacyBroadAccessUpdate({ reason: "update", previousVersion: "1.7.0" }), true);
-  assert.equal(context.isLegacyBroadAccessUpdate({ reason: "update", previousVersion: "1.7.2" }), true);
-  assert.equal(context.isLegacyBroadAccessUpdate({ reason: "update", previousVersion: "1.7.3" }), false);
-  assert.equal(context.isLegacyBroadAccessUpdate({ reason: "update", previousVersion: "1.6.9" }), false);
-  assert.equal(context.isLegacyBroadAccessUpdate({ reason: "install", previousVersion: "1.7.2" }), false);
-});
-
-test("legacy cleanup removes a surviving single-scheme grant", async () => {
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  const originalRemove = context.ExtensionAPI.permissions.remove;
-  const granted = new Set(["https://*/*"]);
-  const removed = [];
-  context.ExtensionAPI.permissions.contains = async ({ origins }) =>
-    origins.every((origin) => granted.has(origin));
-  context.ExtensionAPI.permissions.remove = async ({ origins }) => {
-    removed.push(...origins);
-    origins.forEach((origin) => granted.delete(origin));
-    return true;
-  };
-
-  try {
-    await context.removeLegacyAllSitesPermission();
-    assert.deepEqual(removed, ["https://*/*"]);
-    assert.deepEqual([...granted], []);
-  } finally {
-    context.ExtensionAPI.permissions.contains = originalContains;
-    context.ExtensionAPI.permissions.remove = originalRemove;
-  }
-});
-
-test("legacy site reset clears CCP registrations and maps and sets its notice", async () => {
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalGetRegistered = context.ExtensionAPI.scripting.getRegisteredContentScripts;
-  const originalUnregister = context.ExtensionAPI.scripting.unregisterContentScripts;
-  const stored = {
-    autoConvertSites: {
-      "https://shop.example": true,
-      "https://other.example": true
-    },
-    siteSourceCurrencies: {
-      "https://shop.example": "USD"
-    },
-    siteAccessResetNotice: false,
-    siteAccessResetPending: true,
-    unrelated: "keep"
-  };
-  let registered = [
-    { id: "ccp_site_one" },
-    { id: "unrelated_script" },
-    { id: "ccp_site_two" }
-  ];
-  let unregisteredIds = [];
-
-  context.ExtensionAPI.storage.local = {
-    async get(keys) {
-      const requested = Array.isArray(keys) ? keys : [keys];
-      return Object.fromEntries(requested.map((key) => [key, stored[key]]));
-    },
-    async set(value) {
-      Object.assign(stored, JSON.parse(JSON.stringify(value)));
-    },
-    async remove(key) {
-      delete stored[key];
-    }
-  };
-  context.ExtensionAPI.scripting.getRegisteredContentScripts = async () => registered;
-  context.ExtensionAPI.scripting.unregisterContentScripts = async ({ ids }) => {
-    unregisteredIds = [...ids];
-    registered = registered.filter((script) => !ids.includes(script.id));
-  };
-
-  try {
-    await context.resetLegacySiteAccess();
-    assert.deepEqual(unregisteredIds, ["ccp_site_one", "ccp_site_two"]);
-    assert.deepEqual(stored.autoConvertSites, {});
-    assert.deepEqual(stored.siteSourceCurrencies, {});
-    assert.equal(stored.siteAccessResetNotice, true);
-    assert.equal(stored.siteAccessResetPending, undefined);
-    assert.equal(stored.unrelated, "keep");
-  } finally {
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.scripting.getRegisteredContentScripts = originalGetRegistered;
-    context.ExtensionAPI.scripting.unregisterContentScripts = originalUnregister;
-  }
-});
-
-test("a pending legacy reset survives failure and retries on maintenance", async () => {
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  const originalRemove = context.ExtensionAPI.permissions.remove;
-  const originalGetRegistered = context.ExtensionAPI.scripting.getRegisteredContentScripts;
-  const originalUnregister = context.ExtensionAPI.scripting.unregisterContentScripts;
-  const stored = {
-    autoConvertSites: { "https://shop.example": true },
-    siteSourceCurrencies: { "https://shop.example": "USD" },
-    siteAccessResetNotice: false
-  };
-  const broadPermissions = new Set(["http://*/*", "https://*/*"]);
-  let registered = [{ id: "ccp_site_retry" }];
-  let unregisterAttempts = 0;
-
-  context.ExtensionAPI.storage.local = {
-    async get(keys) {
-      const requested = Array.isArray(keys) ? keys : [keys];
-      return Object.fromEntries(requested.map((key) => [key, stored[key]]));
-    },
-    async set(value) {
-      Object.assign(stored, JSON.parse(JSON.stringify(value)));
-    },
-    async remove(key) {
-      delete stored[key];
-    }
-  };
-  context.ExtensionAPI.permissions.contains = async ({ origins }) =>
-    origins.every((origin) => broadPermissions.has(origin));
-  context.ExtensionAPI.permissions.remove = async ({ origins }) => {
-    origins.forEach((origin) => broadPermissions.delete(origin));
-    return true;
-  };
-  context.ExtensionAPI.scripting.getRegisteredContentScripts = async () => registered;
-  context.ExtensionAPI.scripting.unregisterContentScripts = async ({ ids }) => {
-    unregisterAttempts += 1;
-    if (unregisterAttempts === 1) throw new Error("temporary unregister failure");
-    registered = registered.filter((script) => !ids.includes(script.id));
-  };
-
-  try {
-    await assert.rejects(
-      context.runLegacySiteAccessMaintenance({ reason: "update", previousVersion: "1.7.1" }),
-      /temporary unregister failure/
-    );
-    assert.equal(stored.siteAccessResetPending, true);
-    assert.equal(stored.siteAccessResetNotice, false);
-    assert.deepEqual(stored.autoConvertSites, { "https://shop.example": true });
-
-    assert.equal(await context.runLegacySiteAccessMaintenance(), true);
-    assert.equal(stored.siteAccessResetPending, undefined);
-    assert.equal(stored.siteAccessResetNotice, true);
-    assert.deepEqual(stored.autoConvertSites, {});
-    assert.deepEqual(stored.siteSourceCurrencies, {});
-    assert.deepEqual(registered, []);
-    assert.equal(unregisterAttempts, 2);
-  } finally {
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-    context.ExtensionAPI.permissions.remove = originalRemove;
-    context.ExtensionAPI.scripting.getRegisteredContentScripts = originalGetRegistered;
-    context.ExtensionAPI.scripting.unregisterContentScripts = originalUnregister;
-  }
-});
-
-test("legacy reset serializes permission-removal reconciliation behind cleanup", async () => {
-  const originalCatalog = context.CurrencyCatalogService;
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  const originalRemove = context.ExtensionAPI.permissions.remove;
-  const originalGetRegistered = context.ExtensionAPI.scripting.getRegisteredContentScripts;
-  const originalRegister = context.ExtensionAPI.scripting.registerContentScripts;
-  const originalUpdate = context.ExtensionAPI.scripting.updateContentScripts;
-  const originalUnregister = context.ExtensionAPI.scripting.unregisterContentScripts;
+test("forgetting a site deletes only its saved preference and source mode", async () => {
   const origin = "https://shop.example";
-  const stored = {
-    autoConvertSites: { [origin]: true },
-    siteSourceCurrencies: { [origin]: "USD" },
-    siteAccessResetNotice: false
+  const otherOrigin = "https://other.example";
+  const background = createBackground({
+    local: {
+      autoConvertSites: { [origin]: true, [otherOrigin]: true },
+      siteSourceCurrencies: { [origin]: "USD", [otherOrigin]: "EUR" }
+    },
+    registered: [{ id: "unrelated_script" }]
+  });
+  background.context.ExtensionAPI.scripting.getRegisteredContentScripts = async () => {
+    throw new Error("normal forget flow must not inspect dynamic registrations");
   };
-  const broadPermissions = new Set(["http://*/*", "https://*/*"]);
-  let registered = [{ id: context.siteScriptId(origin) }];
-  let registrationWrites = 0;
-  const reconciliationPromises = [];
 
-  context.CurrencyCatalogService = {
-    getCurrencies: async () => ({ currencies: [{ code: "EUR" }, { code: "USD" }] })
-  };
-  context.ExtensionAPI.storage.local = {
-    async get(keys) {
-      const requested = Array.isArray(keys) ? keys : [keys];
-      return Object.fromEntries(requested.map((key) => [
-        key,
-        JSON.parse(JSON.stringify(stored[key]))
-      ]));
-    },
-    async set(value) {
-      Object.assign(stored, JSON.parse(JSON.stringify(value)));
-    },
-    async remove(key) {
-      delete stored[key];
+  const result = await background.context.CurrencySitePreferences.forget(`${origin}/product`);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.remembered, false);
+  assert.equal(result.permissionRemaining, false);
+  assert.deepEqual(background.localStore.autoConvertSites, { [otherOrigin]: true });
+  assert.deepEqual(background.localStore.siteSourceCurrencies, { [otherOrigin]: "EUR" });
+});
+
+test("forget failure reports saved data that remains", async () => {
+  const origin = "https://shop.example";
+  const background = createBackground({
+    local: {
+      autoConvertSites: { [origin]: true },
+      siteSourceCurrencies: { [origin]: "USD" }
     }
+  });
+  background.context.ExtensionAPI.storage.local.set = async () => {
+    throw new Error("local storage unavailable");
   };
-  context.ExtensionAPI.permissions.contains = async ({ origins }) => origins.every((value) =>
-    value === `${origin}/*` || broadPermissions.has(value)
+
+  const result = await background.context.CurrencySitePreferences.forget(origin);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.remembered, true);
+  assert.equal(result.permissionRemaining, false);
+  assert.equal(result.registrationRemaining, false);
+  assert.equal(result.dataRemaining, true);
+  assert.match(result.error, /remaining: saved site data/);
+});
+
+test("reconciliation removes only stale site registrations and reset flags", async () => {
+  const origin = "https://shop.example";
+  const background = createBackground({
+    local: {
+      autoConvertSites: {
+        [origin]: true,
+        "https://api.frankfurter.dev": true,
+        "not a URL": true
+      },
+      siteSourceCurrencies: {
+        [origin]: "USD",
+        "https://api.frankfurter.dev": "EUR",
+        "https://unused.example": "PLN"
+      },
+      siteAccessResetNotice: true,
+      siteAccessResetPending: true,
+      unrelated: "keep"
+    },
+    registered: [
+      { id: "ccp_site_old_one" },
+      { id: "unrelated_script" },
+      { id: "ccp_site_old_two" }
+    ]
+  });
+
+  await background.context.CurrencySitePreferences.reconcile(["EUR", "PLN", "USD"]);
+
+  assert.deepEqual(background.registeredScripts, [{ id: "unrelated_script" }]);
+  assert.deepEqual(background.localStore.autoConvertSites, { [origin]: true });
+  assert.deepEqual(background.localStore.siteSourceCurrencies, { [origin]: "USD" });
+  assert.equal(background.localStore.siteAccessResetNotice, undefined);
+  assert.equal(background.localStore.siteAccessResetPending, undefined);
+  assert.equal(background.localStore.unrelated, "keep");
+});
+
+test("failed stale-registration cleanup is retried without deleting preferences", async () => {
+  const origin = "https://shop.example";
+  const background = createBackground({
+    local: {
+      autoConvertSites: { [origin]: true },
+      siteSourceCurrencies: { [origin]: "USD" },
+      siteAccessResetPending: true
+    },
+    registered: [{ id: "ccp_site_retry" }]
+  });
+  const originalUnregister = background.context.ExtensionAPI.scripting.unregisterContentScripts;
+  let attempts = 0;
+  background.context.ExtensionAPI.scripting.unregisterContentScripts = async (value) => {
+    attempts += 1;
+    if (attempts === 1) throw new Error("temporary unregister failure");
+    return originalUnregister(value);
+  };
+
+  await assert.rejects(
+    background.context.CurrencySitePreferences.reconcile(["EUR", "USD"]),
+    /temporary unregister failure/
   );
-  context.ExtensionAPI.permissions.remove = async ({ origins }) => {
-    origins.forEach((value) => broadPermissions.delete(value));
-    reconciliationPromises.push(...permissionsOnRemoved.emit({ origins }));
-    return true;
-  };
-  context.ExtensionAPI.scripting.getRegisteredContentScripts = async ({ ids } = {}) =>
-    ids ? registered.filter((script) => ids.includes(script.id)) : registered;
-  context.ExtensionAPI.scripting.registerContentScripts = async (scripts) => {
-    registrationWrites += 1;
-    registered.push(...scripts);
-  };
-  context.ExtensionAPI.scripting.updateContentScripts = async () => {
-    registrationWrites += 1;
-  };
-  context.ExtensionAPI.scripting.unregisterContentScripts = async ({ ids }) => {
-    registered = registered.filter((script) => !ids.includes(script.id));
-  };
+  assert.deepEqual(background.localStore.autoConvertSites, { [origin]: true });
+  assert.equal(background.localStore.siteAccessResetPending, true);
 
-  try {
-    assert.equal(await context.runLegacySiteAccessMaintenance({
-      reason: "update",
-      previousVersion: "1.7.2"
-    }), true);
-    await Promise.all(reconciliationPromises);
-    assert.equal(registrationWrites, 0);
-    assert.deepEqual(registered, []);
-    assert.deepEqual(stored.autoConvertSites, {});
-    assert.deepEqual(stored.siteSourceCurrencies, {});
-    assert.equal(stored.siteAccessResetNotice, true);
-    assert.equal(stored.siteAccessResetPending, undefined);
-  } finally {
-    context.CurrencyCatalogService = originalCatalog;
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-    context.ExtensionAPI.permissions.remove = originalRemove;
-    context.ExtensionAPI.scripting.getRegisteredContentScripts = originalGetRegistered;
-    context.ExtensionAPI.scripting.registerContentScripts = originalRegister;
-    context.ExtensionAPI.scripting.updateContentScripts = originalUpdate;
-    context.ExtensionAPI.scripting.unregisterContentScripts = originalUnregister;
-  }
+  await background.context.CurrencySitePreferences.reconcile(["EUR", "USD"]);
+  assert.equal(attempts, 2);
+  assert.deepEqual(background.registeredScripts, []);
+  assert.deepEqual(background.localStore.autoConvertSites, { [origin]: true });
+  assert.deepEqual(background.localStore.siteSourceCurrencies, { [origin]: "USD" });
+  assert.equal(background.localStore.siteAccessResetPending, undefined);
 });
 
-test("forget reports a permission that the browser did not remove", async () => {
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  const originalRemove = context.ExtensionAPI.permissions.remove;
-  const originalGetRegistered = context.ExtensionAPI.scripting.getRegisteredContentScripts;
-  const originalUnregister = context.ExtensionAPI.scripting.unregisterContentScripts;
-  const origin = "https://shop.example";
-  const stored = {
-    autoConvertSites: { [origin]: true },
-    siteSourceCurrencies: { [origin]: "USD" }
-  };
-  let unregisterAttempted = false;
-  let registrationPresent = true;
+test("the exchange-rate provider cannot be an automatic-conversion site", async () => {
+  const { context } = createBackground();
+  const status = await context.CurrencySitePreferences.getStatus(
+    "https://api.frankfurter.dev/test-shop"
+  );
+  const remembered = await context.CurrencySettingsService.rememberSite(
+    "https://api.frankfurter.dev/test-shop"
+  );
 
-  context.ExtensionAPI.storage.local = {
-    async get(key) {
-      return { [key]: stored[key] };
-    },
-    async set(value) {
-      Object.assign(stored, JSON.parse(JSON.stringify(value)));
-    }
-  };
-  context.ExtensionAPI.permissions.contains = async () => true;
-  context.ExtensionAPI.permissions.remove = async () => false;
-  context.ExtensionAPI.scripting.getRegisteredContentScripts = async () =>
-    registrationPresent ? [{ id: context.siteScriptId(origin) }] : [];
-  context.ExtensionAPI.scripting.unregisterContentScripts = async () => {
-    unregisterAttempted = true;
-    registrationPresent = false;
-  };
-
-  try {
-    const result = await context.forgetSite(origin);
-    assert.equal(result.ok, false);
-    assert.equal(result.remembered, false);
-    assert.equal(result.permissionRemaining, true);
-    assert.equal(result.registrationRemaining, false);
-    assert.equal(result.dataRemaining, false);
-    assert.match(result.error, /permission is still present/);
-    assert.equal(unregisterAttempted, true);
-    assert.deepEqual(stored.autoConvertSites, {});
-    assert.deepEqual(stored.siteSourceCurrencies, {});
-  } finally {
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-    context.ExtensionAPI.permissions.remove = originalRemove;
-    context.ExtensionAPI.scripting.getRegisteredContentScripts = originalGetRegistered;
-    context.ExtensionAPI.scripting.unregisterContentScripts = originalUnregister;
-  }
-});
-
-test("site status exposes orphaned registration and saved data for recovery", async () => {
-  const originalLocal = context.ExtensionAPI.storage.local;
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  const originalGetRegistered = context.ExtensionAPI.scripting.getRegisteredContentScripts;
-  const origin = "https://shop.example";
-  const stored = {
-    autoConvertSites: { [origin]: true },
-    siteSourceCurrencies: { [origin]: "USD" }
-  };
-
-  context.ExtensionAPI.storage.local = {
-    async get(key) {
-      return { [key]: stored[key] };
-    }
-  };
-  context.ExtensionAPI.permissions.contains = async () => false;
-  context.ExtensionAPI.scripting.getRegisteredContentScripts = async () => [
-    { id: context.siteScriptId(origin) }
-  ];
-
-  try {
-    const result = await context.getSiteStatus(`${origin}/product`);
-    assert.equal(result.ok, true);
-    assert.equal(result.remembered, false);
-    assert.equal(result.hasPermission, false);
-    assert.equal(result.registrationRemaining, true);
-    assert.equal(result.dataRemaining, true);
-    assert.equal(result.cleanupRequired, true);
-  } finally {
-    context.ExtensionAPI.storage.local = originalLocal;
-    context.ExtensionAPI.permissions.contains = originalContains;
-    context.ExtensionAPI.scripting.getRegisteredContentScripts = originalGetRegistered;
-  }
-});
-
-test("the exchange-rate provider cannot be remembered as a conversion site", async () => {
-  const originalContains = context.ExtensionAPI.permissions.contains;
-  let permissionChecks = 0;
-  context.ExtensionAPI.permissions.contains = async () => {
-    permissionChecks += 1;
-    return true;
-  };
-
-  try {
-    const status = await context.getSiteStatus("https://api.frankfurter.dev/test-shop");
-    const remembered = await context.rememberSite("https://api.frankfurter.dev/test-shop");
-    assert.equal(status.ok, false);
-    assert.equal(status.remembered, false);
-    assert.match(status.error, /exchange-rate provider.*cannot be enabled/i);
-    assert.equal(remembered.ok, false);
-    assert.equal(remembered.remembered, false);
-    assert.match(remembered.error, /exchange-rate provider.*cannot be enabled/i);
-    assert.equal(permissionChecks, 0);
-  } finally {
-    context.ExtensionAPI.permissions.contains = originalContains;
-  }
+  assert.equal(status.ok, false);
+  assert.equal(status.remembered, false);
+  assert.match(status.error, /exchange-rate provider.*cannot be enabled/i);
+  assert.equal(remembered.ok, false);
+  assert.equal(remembered.remembered, false);
+  assert.match(remembered.error, /exchange-rate provider.*cannot be enabled/i);
 });
 
 test("Firefox site status rejects protected pages and PDF viewers", async () => {
+  const { context } = createBackground();
   assert.deepEqual(
-    JSON.parse(JSON.stringify(await context.getSiteStatus("https://addons.mozilla.org/firefox/"))),
+    plain(await context.CurrencySitePreferences.getStatus("https://addons.mozilla.org/firefox/")),
     {
       ok: false,
       remembered: false,
@@ -1210,7 +973,7 @@ test("Firefox site status rejects protected pages and PDF viewers", async () => 
     }
   );
   assert.match(
-    (await context.getSiteStatus("https://files.example/invoice.pdf")).error,
+    (await context.CurrencySitePreferences.getStatus("https://files.example/invoice.pdf")).error,
     /PDF viewer/
   );
 });

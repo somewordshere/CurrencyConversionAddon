@@ -1,9 +1,13 @@
 importScripts(
   "../shared/browser-api.js",
   "../shared/currencies.js",
+  "../shared/settings.js",
   "../shared/messages.js",
   "../shared/page-access.js",
   "catalog.js",
   "rates.js",
+  "site-preferences.js",
+  "settings-service.js",
+  "page-actions.js",
   "main.js"
 );
