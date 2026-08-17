@@ -109,6 +109,9 @@ test("automatically detects prices and offers conversion on an ordinary website"
 
   await expect(shop.locator(".ccp-page-prompt")).toBeVisible();
   await expect(shop.locator(".ccp-page-prompt")).toContainText("Convert visible prices");
+  // The offer states the rate it would apply before the user accepts it.
+  await expect(shop.locator(".ccp-page-prompt-rate")).toBeVisible();
+  await expect(shop.locator(".ccp-page-prompt-rate")).toHaveText(/^1 USD = 0\.9000 EUR/);
   await expect(shop.locator("ccp-conversion[data-ccp-owned='true']")).toHaveCount(0);
 });
 

@@ -90,6 +90,15 @@ ccp-conversion[data-display-mode="replace"] .ccp-badge {
   line-height: 1.4;
 }
 
+.ccp-page-prompt-rate {
+  display: block;
+  color: #a9bef5;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
 .ccp-page-prompt-close,
 .ccp-page-prompt-action {
   all: unset;

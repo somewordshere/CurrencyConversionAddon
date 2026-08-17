@@ -3,6 +3,7 @@
   let pageConvertPrompt = null;
   let pageConvertButton = null;
   let pageConvertMessage = null;
+  let pageConvertRate = null;
   let pagePromptAction = "convert";
   let pagePromptPreviousFocus = null;
   let selectionPopup = null;
@@ -40,6 +41,7 @@
       pageConvertPrompt = null;
       pageConvertButton = null;
       pageConvertMessage = null;
+      pageConvertRate = null;
       pagePromptPreviousFocus = null;
     }
     if (pageConvertPrompt || !settings?.enabled || !document.body || window.top !== window) return;
@@ -48,7 +50,10 @@
     pageConvertPrompt = document.createElement("aside");
     pageConvertPrompt.className = "ccp-page-prompt";
     pageConvertPrompt.setAttribute("aria-labelledby", "ccp-page-prompt-title");
-    pageConvertPrompt.setAttribute("aria-describedby", "ccp-page-prompt-message");
+    pageConvertPrompt.setAttribute(
+      "aria-describedby",
+      "ccp-page-prompt-message ccp-page-prompt-rate"
+    );
 
     const header = document.createElement("div");
     header.className = "ccp-page-prompt-header";
@@ -72,15 +77,47 @@
     pageConvertMessage.setAttribute("aria-atomic", "true");
     pageConvertMessage.textContent = `Convert visible prices on this page to ${settings.toCurrency}.`;
 
+    // Shown once the rate is known, so the offer states what you would get
+    // before you accept it. Not a live region: the message beside it already is.
+    pageConvertRate = document.createElement("span");
+    pageConvertRate.id = "ccp-page-prompt-rate";
+    pageConvertRate.className = "ccp-page-prompt-rate";
+    pageConvertRate.hidden = true;
+
     pageConvertButton = document.createElement("button");
     pageConvertButton.type = "button";
     pageConvertButton.className = "ccp-page-prompt-action";
     pageConvertButton.textContent = "Convert prices";
     pageConvertButton.addEventListener("click", handlePagePromptAction);
 
-    pageConvertPrompt.append(header, pageConvertMessage, pageConvertButton);
+    pageConvertPrompt.append(header, pageConvertMessage, pageConvertRate, pageConvertButton);
     pageConvertPrompt.addEventListener("keydown", handlePagePromptKeydown);
     document.body.appendChild(pageConvertPrompt);
+  }
+
+  function setPageConvertPromptRate(descriptor) {
+    if (!pageConvertRate) return;
+    if (!descriptor || !Number.isFinite(descriptor.rate)) {
+      pageConvertRate.textContent = "";
+      pageConvertRate.hidden = true;
+      return;
+    }
+    // Deliberately terse: this card is 268px wide and a full freshness phrase
+    // wraps to a second line. The popup and toast carry the detail.
+    const freshness = descriptor.stale ? "cached" : descriptor.date || "";
+    pageConvertRate.textContent = `1 ${descriptor.base} = ${
+      formatPromptRate(descriptor.rate)
+    } ${descriptor.quote}${freshness ? ` · ${freshness}` : ""}`;
+    pageConvertRate.title = descriptor.stale && descriptor.cacheAgeLabel
+      ? `Cached rate, ${descriptor.cacheAgeLabel}`
+      : "";
+    pageConvertRate.hidden = false;
+  }
+
+  function formatPromptRate(rate) {
+    if (rate >= 1000) return rate.toFixed(1);
+    if (rate >= 0.001) return rate.toFixed(4);
+    return rate.toPrecision(3);
   }
 
   async function handlePagePromptAction() {
@@ -175,6 +212,7 @@
     pageConvertPrompt = null;
     pageConvertButton = null;
     pageConvertMessage = null;
+    pageConvertRate = null;
     pagePromptAction = "convert";
     if (shouldRestoreFocus) restoreFocusTo(pagePromptPreviousFocus);
     pagePromptPreviousFocus = null;
@@ -453,6 +491,7 @@
     configure,
     installSelectionListeners,
     showPageConvertPrompt,
+    setPageConvertPromptRate,
     removePageConvertPrompt,
     showToast,
     clearTransientUi

@@ -385,6 +385,22 @@
     return Promise.allSettled(bases.map(ensureRates));
   }
 
+  // Read-only view of an already-loaded rate, for surfaces that want to show what
+  // a conversion would give before the user commits to it. Never fetches.
+  function describeRate(baseCurrency) {
+    const rate = activeRatesByBase[baseCurrency]?.[settings?.toCurrency];
+    if (!Number.isFinite(rate)) return null;
+    const meta = activeRateMetaByBase[baseCurrency] || {};
+    return {
+      base: baseCurrency,
+      quote: settings.toCurrency,
+      rate,
+      date: meta.date || null,
+      stale: Boolean(meta.stale),
+      cacheAgeLabel: meta.cacheAgeLabel || null
+    };
+  }
+
   function startDiscovering(onFound) {
     if (!settings?.enabled || !document.body || typeof MutationObserver === "undefined") return;
     discoveryCallback = onFound;
@@ -848,6 +864,7 @@
     hasConversions,
     detectPagePrices,
     prefetchRates,
+    describeRate,
     startDiscovering,
     stopDiscovering,
     startWatching,

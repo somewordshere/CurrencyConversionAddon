@@ -276,6 +276,19 @@
     }
   }
 
+  // Rates are prefetched for the prompt anyway; once they land, tell the prompt
+  // what the conversion would give so the offer is informed rather than blind.
+  function showPromptRateWhenReady(currencies, expectedGeneration) {
+    const base = [...new Set(currencies || [])]
+      .find((currency) => currency && currency !== settings?.toCurrency);
+    CurrencyPageConverter.prefetchRates(currencies)
+      .then(() => {
+        if (expectedGeneration !== pageCommandGeneration || !base) return;
+        CurrencyPageUi.setPageConvertPromptRate(CurrencyPageConverter.describeRate(base));
+      })
+      .catch(() => {});
+  }
+
   function offerPageConversion(expectedGeneration = pageCommandGeneration) {
     if (
       expectedGeneration !== pageCommandGeneration ||
@@ -288,7 +301,7 @@
     if (detection.found) {
       CurrencyPageConverter.stopDiscovering();
       CurrencyPageUi.showPageConvertPrompt();
-      CurrencyPageConverter.prefetchRates(detection.currencies).catch(() => {});
+      showPromptRateWhenReady(detection.currencies, expectedGeneration);
       return;
     }
 
@@ -301,7 +314,7 @@
         CurrencyPageConverter.hasConversions()
       ) return;
       CurrencyPageUi.showPageConvertPrompt();
-      CurrencyPageConverter.prefetchRates(nextDetection.currencies).catch(() => {});
+      showPromptRateWhenReady(nextDetection.currencies, expectedGeneration);
     });
   }
 
