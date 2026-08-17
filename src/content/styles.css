@@ -21,6 +21,10 @@ ccp-conversion .ccp-badge {
   white-space: nowrap;
   transform-origin: left center;
   animation: ccp-converted-value-enter 360ms cubic-bezier(.2, .8, .2, 1) both;
+  /* A neutral inset ring so the pill keeps its edge against product photography
+     and dark retail themes. Alpha-based, so it holds for any custom colour the
+     user picks — those are applied inline with !important and still win. */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.09);
 }
 
 ccp-conversion[data-display-mode="replace"] .ccp-badge {
@@ -49,9 +53,9 @@ ccp-conversion[data-display-mode="replace"] .ccp-badge {
   right: 16px;
   width: min(300px, calc(100vw - 32px));
   padding: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
-  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: linear-gradient(168deg, #16327e, #1b3fbf);
   font-size: 13px;
   line-height: 1.35;
   cursor: default;
@@ -81,7 +85,7 @@ ccp-conversion[data-display-mode="replace"] .ccp-badge {
 
 .ccp-page-prompt-message {
   display: block;
-  color: #d1d5db;
+  color: #c3d3fb;
   font-size: 12px;
   line-height: 1.4;
 }
@@ -99,23 +103,24 @@ ccp-conversion[data-display-mode="replace"] .ccp-badge {
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: 7px;
-  color: #9ca3af;
+  border-radius: 6px;
+  color: #a9bef5;
   font-size: 20px;
   line-height: 1;
 }
 
 .ccp-page-prompt-close:hover {
-  background: #1f2937;
+  background: rgba(255, 255, 255, 0.14);
   color: #fff;
 }
 
+/* Inverted against the blue panel: a blue button on a blue card reads as flat. */
 .ccp-page-prompt-action {
   display: block;
   padding: 9px 12px;
-  border-radius: 9px;
-  background: #2563eb;
-  color: #fff;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #16327e;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.2;
@@ -123,14 +128,15 @@ ccp-conversion[data-display-mode="replace"] .ccp-badge {
 }
 
 .ccp-page-prompt-action:hover {
-  background: #1d4ed8;
+  background: #e8eeff;
 }
 
 .ccp-selection-popup {
   left: 0;
   top: 0;
   padding: 7px 11px;
-  background: #2563eb;
+  border-radius: 6px;
+  background: linear-gradient(168deg, #16327e, #1b3fbf);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
@@ -145,11 +151,12 @@ ccp-conversion[data-display-mode="replace"] .ccp-badge {
   right: 16px;
   max-width: min(360px, calc(100vw - 32px));
   padding: 10px 14px;
-  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #0f1728;
   font-size: 13px;
   line-height: 1.4;
   cursor: default;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 10px 30px rgba(8, 12, 22, 0.35);
 }
 
 .ccp-toast-message {
@@ -168,7 +175,7 @@ ccp-conversion[data-display-mode="replace"] .ccp-badge {
 }
 
 .ccp-toast-action {
-  color: #bfdbfe;
+  color: #a9bef5;
   font: 700 13px/1.2 system-ui, sans-serif;
   text-decoration: underline;
 }
@@ -200,12 +207,12 @@ ccp-conversion[data-display-mode="replace"] .ccp-badge {
 }
 
 .ccp-page-prompt[data-state="success"] {
-  border-color: #0f766e;
+  border-color: #86efac;
   animation: ccp-page-prompt-success 520ms cubic-bezier(.2, .8, .2, 1) both;
 }
 
 .ccp-page-prompt[data-state="error"] {
-  border-color: #dc2626;
+  border-color: #fca5a5;
 }
 
 .ccp-selection-popup[data-state="success"] {
