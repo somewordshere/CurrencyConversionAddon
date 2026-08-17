@@ -1,7 +1,57 @@
 const { expect } = require("@playwright/test");
-const { createSeededExtensionState } = require("../helpers/extension-state");
+const {
+  createSeededExtensionState,
+  PROVIDER_CURRENCIES,
+  RATES_BY_BASE,
+  RATE_DATE
+} = require("../helpers/extension-state");
 
 const DEFAULT_SHOP_URL = "https://api.frankfurter.dev/test-shop";
+
+// Playwright cannot route requests made from an extension service worker, so the
+// provider is stubbed inside the worker itself. Without this the suite races the
+// live Frankfurter API: any code path that asks for rates overwrites the seeded
+// cache with real market rates and the expected conversions drift.
+async function stubRateProvider(extensionWorker) {
+  await extensionWorker.evaluate(({ currencies, ratesByBase, rateDate }) => {
+    if (globalThis.__ccpProviderStubbed) return;
+    globalThis.__ccpProviderStubbed = true;
+    const realFetch = globalThis.fetch.bind(globalThis);
+    const json = (body) => new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+
+    globalThis.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input?.url || "";
+      if (url.includes("api.frankfurter.dev/v2/currencies")) {
+        return json(currencies.map((currency) => ({
+          iso_code: currency.code,
+          name: currency.name,
+          symbol: currency.symbol,
+          start_date: currency.startDate,
+          end_date: currency.endDate
+        })));
+      }
+      if (url.includes("api.frankfurter.dev/v2/rates")) {
+        const base = new URL(url).searchParams.get("base");
+        const rates = ratesByBase[base];
+        if (!rates) {
+          return new Response(JSON.stringify({ message: `No rates for ${base}.` }), { status: 404 });
+        }
+        const quoted = Object.fromEntries(
+          Object.entries(rates).filter(([code]) => code !== base)
+        );
+        return json({ base, date: rateDate, rates: quoted });
+      }
+      return realFetch(input, init);
+    };
+  }, {
+    currencies: PROVIDER_CURRENCIES.map((currency) => ({ ...currency })),
+    ratesByBase: JSON.parse(JSON.stringify(RATES_BY_BASE)),
+    rateDate: RATE_DATE
+  });
+}
 
 async function seedExtension(extensionWorker, options = {}) {
   await expect.poll(async () => extensionWorker.evaluate(async () => (
@@ -10,6 +60,8 @@ async function seedExtension(extensionWorker, options = {}) {
     message: "extension installation to initialize sync storage",
     timeout: 15_000
   }).toBe(true);
+
+  await stubRateProvider(extensionWorker);
 
   const state = createSeededExtensionState({
     ...options,
@@ -181,5 +233,6 @@ module.exports = {
   openPopupForPage,
   runContentUiScenario,
   runPageCommand,
-  seedExtension
+  seedExtension,
+  stubRateProvider
 };

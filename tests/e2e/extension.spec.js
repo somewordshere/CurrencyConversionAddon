@@ -959,7 +959,9 @@ test("rapid popup changes remain consistent across close and validation races", 
     globalThis.__ccpDelayedPopupRate = new Promise((resolve) => {
       globalThis.__ccpReleaseDelayedPopupRate = () => resolve({
         ok: true,
-        rates: { CHF: 1, EUR: 1.08 },
+        // USD is quoted here so it stays selectable as a target: the popup now
+        // narrows the target list to quotable currencies from first paint.
+        rates: { CHF: 1, EUR: 1.08, USD: 1.1 },
         date: "2026-07-10",
         provider: "Delayed popup test rate"
       });
@@ -1230,15 +1232,14 @@ test("real extension popup, injection, dynamic conversion, and undo work togethe
   await expect(popup.getByRole("button", { name: "Favorite target currency" })).toHaveCount(0);
   await expect(popup.locator("#clearPage")).toBeHidden();
   await expect(popup.locator("#clearSite")).toBeHidden();
-  await expect(popup.locator("#quickConverter")).not.toHaveAttribute("open", "");
   await expect(popup.locator("#pageOptions")).not.toHaveAttribute("open", "");
   await expect(popup.getByRole("combobox", { name: "Source currency", exact: true })).toHaveValue("AUTO");
   await expect(popup.locator("#fromCurrency option").first()).toHaveText("AUTO");
   await expect(popup.getByRole("combobox", { name: "Target currency", exact: true })).toHaveValue(/^EUR/);
   expect(await popup.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
 
-  await popup.getByText("Convert custom amount", { exact: true }).click();
-  await expect(popup.locator("#quickConverter")).toHaveAttribute("open", "");
+  // The amount row is always visible in 2.0; only Page options stays behind a disclosure.
+  await expect(popup.locator("#quickConverter")).toBeVisible();
   await expect(popup.locator("#quickSourceRequired")).toBeVisible();
   await expect(popup.locator("#quickConverterFields")).toBeHidden();
   const sourceCurrency = popup.getByRole("combobox", { name: "Source currency", exact: true });
@@ -1259,8 +1260,13 @@ test("real extension popup, injection, dynamic conversion, and undo work togethe
   await expect(popup.locator("#quickRateInfo")).toHaveAttribute("title", /Frankfurter/);
   await expect(popup.locator("#fromCurrency option[value='AFN']")).toHaveCount(1);
   await expect(popup.locator("#toCurrency option[value='AFN']")).toHaveCount(0);
-  await popup.getByText("Convert custom amount", { exact: true }).click();
-  await expect(popup.locator("#quickConverter")).not.toHaveAttribute("open", "");
+
+  // The live rate hero reads from the same rate response as the amount row.
+  await expect(popup.locator("#rateFrom")).toHaveText("USD");
+  await expect(popup.locator("#rateTo")).toHaveText("EUR");
+  await expect(popup.locator("#rateValue")).toHaveText("0.9000");
+  await expect(popup.locator("#fromCurrencyDisc")).toHaveText("$");
+  await expect(popup.locator("#toCurrencyDisc")).toHaveText("€");
 
   await popup.getByText("Page options", { exact: true }).click();
   await expect(popup.locator("#pageOptions")).toHaveAttribute("open", "");

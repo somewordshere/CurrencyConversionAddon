@@ -93,5 +93,8 @@ function createSeededExtensionState({
 
 module.exports = {
   DEFAULT_SETTINGS,
+  PROVIDER_CURRENCIES,
+  RATES_BY_BASE,
+  RATE_DATE,
   createSeededExtensionState
 };

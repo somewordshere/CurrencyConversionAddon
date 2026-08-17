@@ -36,6 +36,17 @@ const pageOptionsNode = document.getElementById("pageOptions");
 const quickConverterFieldsNode = document.getElementById("quickConverterFields");
 const quickSourceRequiredNode = document.getElementById("quickSourceRequired");
 const chooseQuickSourceButton = document.getElementById("chooseQuickSource");
+const quickOutputLabelNode = document.getElementById("quickOutputLabel");
+const fromCurrencyDiscNode = document.getElementById("fromCurrencyDisc");
+const toCurrencyDiscNode = document.getElementById("toCurrencyDisc");
+const openPageOptionsButton = document.getElementById("openPageOptions");
+const recentPairsNode = document.getElementById("recentPairs");
+const rateLineNode = document.getElementById("rateLine");
+const rateFromNode = document.getElementById("rateFrom");
+const rateToNode = document.getElementById("rateTo");
+const rateValueNode = document.getElementById("rateValue");
+const rateMetaNode = document.getElementById("rateMeta");
+const rateMetaTextNode = document.getElementById("rateMetaText");
 const currencyNames = new Intl.DisplayNames([navigator.language || "en"], { type: "currency" });
 const M = CurrencyMessages;
 const contentScriptResources = CurrencyPopupContentScriptResources.fromManifest(
@@ -46,6 +57,7 @@ let siteStatus = null;
 let lastDetectedCurrency = null;
 let currencies = [];
 let recentCurrencies = [];
+let recentPairs = [];
 let currencyDetails = new Map();
 let availableQuoteCurrencies = null;
 let availableRatesSource = null;
@@ -96,7 +108,7 @@ async function initialize() {
     activePageUrl
       ? ExtensionAPI.runtime.sendMessage({ type: M.GET_SITE_STATUS, origin: activePageUrl })
       : Promise.resolve({ ok: false, remembered: false }),
-    ExtensionAPI.storage.local.get("recentCurrencies")
+    ExtensionAPI.storage.local.get(["recentCurrencies", "recentPairs"])
   ]);
 
   if (!currenciesResult?.ok || !settingsResult?.ok) throw new Error("Could not load extension settings.");
@@ -104,6 +116,7 @@ async function initialize() {
   currencyDetails = new Map((currenciesResult.details || []).map((currency) => [currency.code, currency]));
   catalogWarning = currenciesResult.warning || null;
   recentCurrencies = localPreferences.recentCurrencies || [];
+  recentPairs = normalizeRecentPairs(localPreferences.recentPairs);
   populateCurrencyLists();
   const settings = settingsController.initialize(settingsResult.settings);
   if (!settings) throw new Error("The extension returned invalid settings.");
@@ -143,6 +156,8 @@ async function initialize() {
     currenciesResult.stale ? " from cached catalog" : ""
   }${catalogWarning ? `. ${catalogWarning}` : ""}`;
   updateSwapState();
+  updateCurrencyDiscs();
+  renderRecentPairs();
   updatePrimaryActionLabel();
   if (pageConversionError) {
     setStatus(`${pageConversionError} You can still convert a custom amount.`, "warning");
@@ -152,8 +167,14 @@ async function initialize() {
     updatePrimaryActionLabel();
     saveSettings();
   });
-  fromCurrencySelect.addEventListener("change", () => saveSettings());
-  toCurrencySelect.addEventListener("change", () => saveSettings());
+  fromCurrencySelect.addEventListener("change", () => {
+    updateCurrencyDiscs();
+    saveSettings();
+  });
+  toCurrencySelect.addEventListener("change", () => {
+    updateCurrencyDiscs();
+    saveSettings();
+  });
   displayModeSelect.addEventListener("change", () => saveSettings());
   bindAppearanceControls();
   showPagePromptInput.addEventListener("change", () => saveSettings());
@@ -164,10 +185,12 @@ async function initialize() {
   clearSiteButton.addEventListener("click", clearWholeSite);
   quickAmountInput.addEventListener("input", scheduleQuickConversion);
   chooseQuickSourceButton.addEventListener("click", () => fromCurrencySearch.focus());
-  quickConverterNode.addEventListener("toggle", () => {
-    if (quickConverterNode.open) scheduleQuickConversion({ immediate: true });
+  openPageOptionsButton.addEventListener("click", () => {
+    pageOptionsNode.open = true;
+    pageOptionsNode.scrollIntoView({ block: "nearest" });
+    pageOptionsNode.querySelector("summary")?.focus();
   });
-  if (quickConverterNode.open) await calculateQuickConversion();
+  await calculateQuickConversion();
 
   const shortcutKeyNode = document.getElementById("shortcutKey");
   if (shortcutKeyNode && navigator.userAgent.includes("Mac")) {
@@ -213,6 +236,93 @@ function getCurrencyName(currency) {
   } catch (_error) {
     return currency;
   }
+}
+
+function getCurrencySymbol(currency) {
+  const symbols = CurrencyCatalog.CURRENCY_META[currency]?.symbols;
+  if (!symbols?.length) return currency;
+  return symbols.reduce((shortest, symbol) => (symbol.length < shortest.length ? symbol : shortest));
+}
+
+// Flag emoji are deliberately avoided: Windows ships no flag glyphs, so they would
+// render as bare country letters. The currency's own symbol works on every platform.
+function applyCurrencyDisc(node, currency) {
+  const resolved = currency === "AUTO" ? lastDetectedCurrency : currency;
+  const label = resolved ? getCurrencySymbol(resolved) : "AUTO";
+  node.textContent = label;
+  node.dataset.auto = String(currency === "AUTO" && !resolved);
+  if (label.length >= 4) node.dataset.length = "long";
+  else if (label.length >= 2) node.dataset.length = "medium";
+  else delete node.dataset.length;
+}
+
+function updateCurrencyDiscs() {
+  applyCurrencyDisc(fromCurrencyDiscNode, fromCurrencySelect.value);
+  applyCurrencyDisc(toCurrencyDiscNode, toCurrencySelect.value);
+}
+
+function setRateHero({ from, to, rate, meta, kind = "fresh" }) {
+  rateFromNode.textContent = from;
+  rateToNode.textContent = to;
+  rateValueNode.textContent = formatRateValue(rate);
+  rateMetaTextNode.textContent = meta;
+  rateMetaNode.dataset.kind = kind;
+  replayAnimation(rateLineNode, "is-updated");
+}
+
+function setRateHeroMessage(meta, kind = "offline") {
+  rateValueNode.textContent = "—";
+  rateMetaTextNode.textContent = meta;
+  rateMetaNode.dataset.kind = kind;
+}
+
+function formatRateValue(rate) {
+  if (!Number.isFinite(rate)) return "—";
+  if (rate >= 1000) return rate.toFixed(1);
+  if (rate >= 1) return rate.toFixed(4);
+  if (rate >= 0.001) return rate.toFixed(4);
+  return rate.toPrecision(3);
+}
+
+function renderRecentPairs() {
+  const current = `${fromCurrencySelect.value}:${toCurrencySelect.value}`;
+  const pairs = recentPairs.filter((pair) => `${pair.from}:${pair.to}` !== current).slice(0, 3);
+  recentPairsNode.replaceChildren();
+  if (!pairs.length) {
+    recentPairsNode.hidden = true;
+    return;
+  }
+
+  const label = document.createElement("span");
+  label.className = "recent-pairs-label";
+  label.textContent = "Recent";
+  recentPairsNode.appendChild(label);
+
+  for (const pair of pairs) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "pair-chip";
+    chip.textContent = `${pair.from}→${pair.to}`;
+    chip.title = `Switch to ${pair.from} to ${pair.to}`;
+    chip.disabled = !popupReady || popupLocked;
+    chip.addEventListener("click", () => applyRecentPair(pair));
+    recentPairsNode.appendChild(chip);
+  }
+  recentPairsNode.hidden = false;
+}
+
+function applyRecentPair(pair) {
+  const hasSource = [...fromCurrencySelect.options].some((option) => option.value === pair.from);
+  const hasTarget = [...toCurrencySelect.options].some((option) => option.value === pair.to);
+  if (!hasSource || !hasTarget) {
+    setStatus("That currency pair is no longer available from the rate provider.", "warning");
+    return;
+  }
+  fromCurrencySelect.value = pair.from;
+  toCurrencySelect.value = pair.to;
+  syncCurrencyComboboxes();
+  updateCurrencyDiscs();
+  saveSettings();
 }
 
 function createCurrencyCombobox(select, input, listbox) {
@@ -341,7 +451,11 @@ function closeCurrencyCombobox(state, restoreLabel) {
 
 function syncCurrencyCombobox(state) {
   const selected = state.select.selectedOptions[0];
-  state.input.value = selected?.textContent || state.select.value;
+  // Only the code is shown: the symbol disc beside it carries recognition and the
+  // full name would truncate at this width. Names stay visible in the listbox and
+  // remain searchable, because filtering still reads the option's full text.
+  state.input.value = selected?.value || state.select.value;
+  state.input.title = selected?.textContent || "";
 }
 
 function syncCurrencyComboboxes() {
@@ -515,6 +629,7 @@ function saveSettings({ syncPage = true } = {}) {
 function handleInitializationFailure(error) {
   popupLocked = true;
   siteStateNode.textContent = "Popup unavailable";
+  setRateHeroMessage("The rate service could not be reached.", "offline");
   setPopupInteractivity(false);
   setStatus(
     `Currency Converter Pro could not start. ${errorMessage(error)} Close and reopen the popup to try again.`,
@@ -550,9 +665,13 @@ function setPopupInteractivity(enabled) {
     showPagePromptInput,
     enabledInput,
     quickAmountInput,
-    chooseQuickSourceButton
+    chooseQuickSourceButton,
+    openPageOptionsButton
   ]) {
     control.disabled = !interactive;
+  }
+  for (const chip of recentPairsNode.querySelectorAll(".pair-chip")) {
+    chip.disabled = !interactive;
   }
 
   rememberSiteInput.disabled = !interactive || !siteStatus?.ok;
@@ -652,6 +771,8 @@ function applySettingsToControls(settings) {
   applyAppearanceSettings(settings, { announce: false });
   showPagePromptInput.checked = settings.showPagePrompt;
   syncCurrencyComboboxes();
+  updateCurrencyDiscs();
+  renderRecentPairs();
   updatePrimaryActionLabel();
   updateSwapState();
   updateSiteState();
@@ -669,6 +790,7 @@ function swapCurrencies() {
   fromCurrencySelect.value = target;
   toCurrencySelect.value = source;
   syncCurrencyComboboxes();
+  updateCurrencyDiscs();
   saveSettings();
 }
 
@@ -796,6 +918,7 @@ async function convertWholeSite() {
   }
   lastDetectedCurrency = result.detectedCurrency || null;
   updateSwapState();
+  updateCurrencyDiscs();
   scheduleQuickConversion({ immediate: true });
   const hasConversions = result.count > 0;
   clearPageButton.disabled = !hasConversions;
@@ -902,7 +1025,7 @@ function moveFocusBeforeHiding(node, wasFocused = node?.contains(document.active
   const candidates = [
     convertSiteButton,
     fromCurrencySearch,
-    quickConverterNode.querySelector("summary"),
+    quickAmountInput,
     pageOptionsNode.querySelector("summary")
   ];
   const target = candidates.find((candidate) =>
@@ -943,7 +1066,6 @@ function scheduleQuickConversion({ immediate = false } = {}) {
 async function calculateQuickConversion() {
   quickConversionTimer = null;
   const requestId = ++quickConversionRequestId;
-  if (!quickConverterNode.open) return;
   const sourceCurrency = fromCurrencySelect.value === "AUTO"
     ? lastDetectedCurrency
     : fromCurrencySelect.value;
@@ -956,31 +1078,34 @@ async function calculateQuickConversion() {
     populateCurrencyLists();
     quickSourceRequiredNode.hidden = false;
     quickConverterFieldsNode.hidden = true;
+    setRateHeroMessage("Convert once so AUTO can identify the source currency.", "stale");
     setQuickConversionState("Choose source", "Select a source currency above.", "empty");
     return;
   }
   quickSourceRequiredNode.hidden = true;
   quickConverterFieldsNode.hidden = false;
   if (!currencies.includes(sourceCurrency) || !currencies.includes(targetCurrency)) {
+    setRateHeroMessage("Select supported source and target currencies.", "offline");
     setQuickConversionState("Choose currencies", "Select supported source and target currencies.", "error");
     return;
   }
   if (sourceCurrency === targetCurrency) {
+    setRateHeroMessage("Source and target must differ.", "offline");
     setQuickConversionState("Choose different currencies", "Source and target must differ.", "error");
     return;
   }
-  if (!amountText) {
-    setQuickConversionState("Enter an amount", "", "error");
-    return;
-  }
+  // The rate is fetched even when the amount is unusable so the header hero stays
+  // truthful while the amount field is empty or mid-edit.
+  const amount = amountText ? CurrencyNumberParser.parseLocaleNumber(amountText) : NaN;
+  const amountProblem = !amountText
+    ? { result: "Enter an amount", detail: "" }
+    : !Number.isFinite(amount)
+      ? { result: "Invalid amount", detail: "Use a number such as 100 or 1,234.56." }
+      : null;
 
-  const amount = CurrencyNumberParser.parseLocaleNumber(amountText);
-  if (!Number.isFinite(amount)) {
-    setQuickConversionState("Invalid amount", "Use a number such as 100 or 1,234.56.", "error");
-    return;
-  }
-
-  setQuickConversionState("Converting…", "", "loading");
+  quickOutputLabelNode.textContent = getCurrencyName(targetCurrency);
+  if (amountProblem) setQuickConversionState(amountProblem.result, amountProblem.detail, "error");
+  else setQuickConversionState("Converting…", "", "loading");
   if (availableRatesSource !== sourceCurrency) {
     availableQuoteCurrencies = null;
     availableRatesSource = sourceCurrency;
@@ -994,13 +1119,20 @@ async function calculateQuickConversion() {
   }
   const rate = result?.rates?.[targetCurrency];
   if (!result?.ok || !Number.isFinite(rate)) {
-    setQuickConversionState(
-      "Rate unavailable",
-      result?.error || `No ${sourceCurrency} to ${targetCurrency} rate is available.`,
-      "error"
-    );
+    const unavailable = result?.error || `No ${sourceCurrency} to ${targetCurrency} rate is available.`;
+    setRateHeroMessage(unavailable, "offline");
+    setQuickConversionState("Rate unavailable", unavailable, "error");
     return;
   }
+
+  setRateHero({
+    from: sourceCurrency,
+    to: targetCurrency,
+    rate,
+    meta: describeRateFreshness(result),
+    kind: result.stale ? "stale" : "fresh"
+  });
+  if (amountProblem) return;
 
   const converted = CurrencyCatalog.formatCurrencyAmount(amount * rate, targetCurrency);
   const details = [
@@ -1047,12 +1179,43 @@ function safeUrl(value) {
   try { return new URL(value); } catch (_error) { return null; }
 }
 
+function describeRateFreshness(result) {
+  if (result.stale) {
+    return [
+      `Cached${result.cacheAgeLabel ? `, ${result.cacheAgeLabel}` : ""}`,
+      result.date || null
+    ].filter(Boolean).join(" · ");
+  }
+  return [result.date ? `Rate ${result.date}` : "Latest rate", result.provider || null]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function normalizeRecentPairs(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const pairs = [];
+  for (const entry of value) {
+    if (typeof entry?.from !== "string" || typeof entry?.to !== "string") continue;
+    const key = `${entry.from}:${entry.to}`;
+    if (entry.from === entry.to || seen.has(key)) continue;
+    seen.add(key);
+    pairs.push({ from: entry.from, to: entry.to });
+  }
+  return pairs.slice(0, 6);
+}
+
 async function storeRecentCurrencies(settings) {
   const candidates = [settings.fromCurrency, settings.toCurrency, ...recentCurrencies]
     .filter((currency) => currency !== "AUTO");
   recentCurrencies = [...new Set(candidates)].slice(0, 6);
-  await ExtensionAPI.storage.local.set({ recentCurrencies });
+  recentPairs = normalizeRecentPairs([
+    { from: settings.fromCurrency, to: settings.toCurrency },
+    ...recentPairs
+  ]);
+  await ExtensionAPI.storage.local.set({ recentCurrencies, recentPairs });
   populateCurrencyLists();
+  renderRecentPairs();
 }
 
 async function sendToActivePage(type, payload = {}) {
