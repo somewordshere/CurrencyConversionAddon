@@ -99,9 +99,6 @@
   global.CurrencyCatalogService = Object.freeze({
     getCurrencies,
     getCachedCurrencies,
-    sanitizeCurrencyResponse,
-    buildFallbackCurrencies,
-    isFresh,
     fetchWithTimeout: CurrencyHttp.fetchWithTimeout
   });
 })(globalThis);

@@ -57,7 +57,6 @@
     NUMBER_CAPTURE: capture,
     parseLocaleNumber,
     normalizeDigits,
-    escapeRegex,
     buildMarkerPattern
   });
 })(globalThis);

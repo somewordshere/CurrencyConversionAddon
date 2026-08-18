@@ -199,11 +199,6 @@
   global.CurrencyRateService = Object.freeze({
     getRates,
     parseRatesResponse,
-    sanitizeRates,
-    isFresh,
-    getCacheAgeMs,
-    describeAge,
-    fetchWithRetry,
     fetchWithTimeout: CurrencyHttp.fetchWithTimeout
   });
 })(globalThis);

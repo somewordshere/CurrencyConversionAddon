@@ -136,10 +136,6 @@
 
   global.CurrencyRateHistoryService = Object.freeze({
     getHistory,
-    sanitizeSeries,
-    isFresh,
-    CACHE_KEY,
-    CACHE_VERSION,
-    WINDOW_DAYS
+    sanitizeSeries
   });
 })(globalThis);

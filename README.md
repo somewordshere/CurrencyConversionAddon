@@ -172,18 +172,6 @@ npm run build
 upload-ready ZIP files are written to `release/<version>/`, while unpacked
 development builds are written to `dist/chrome/` and `dist/firefox/`.
 
-To build through the platform wrapper instead, use Windows PowerShell:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
-```
-
-macOS or Linux:
-
-```bash
-sh ./scripts/build-release.sh
-```
-
 Or build only one browser target:
 
 ```bash

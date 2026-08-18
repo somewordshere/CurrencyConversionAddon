@@ -121,7 +121,6 @@
   global.CurrencySettings = Object.freeze({
     DEFAULTS,
     KEYS,
-    DISPLAY_MODES,
     CONVERTED_SHAPES,
     SHAPE_RADII,
     RATE_AFFECTING_KEYS,
