@@ -19,6 +19,7 @@
     "check": "node scripts/check-project.js",
     "verify": "npm run check && npm test",
     "build:icons": "node scripts/build-icons.mjs",
+    "build:promo": "node scripts/build-promo-tile.mjs",
     "capture": "npm run prepare:chrome && playwright test --config playwright.capture.config.js",
     "build:store-assets": "npm run capture && node scripts/build-store-screenshots.mjs"
   },

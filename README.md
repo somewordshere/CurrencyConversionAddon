@@ -1,12 +1,16 @@
 # 💱 Currency Converter Pro
 
-Currency Converter Pro is a privacy-focused Chrome and Firefox extension that converts prices on shopping pages into a currency you understand.
+Currency Converter Pro is a Chrome and Firefox extension that converts prices on shopping pages into a currency you understand.
 
-**Current version:** 2.0.0 · **Platforms:** Chrome and Firefox Manifest V3 · **License:** MIT
+Detection, conversion, and rendering all happen inside your browser. The only thing that ever leaves it is an ISO currency code such as `USD` or `EUR` — never page content, prices, or the sites you visit.
+
+**Current version:** 2.0.0 · **Platforms:** Chrome and Firefox Manifest V3 · **Firefox:** 140+ · Android 142+ · **License:** MIT
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome-Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/) [![Chrome build](https://img.shields.io/badge/Chrome-Build-4285F4?logo=googlechrome&logoColor=white)](release/2.0.0/currency-converter-pro-2.0.0-chrome.zip) [![Firefox build](https://img.shields.io/badge/Firefox-Build-FF7139?logo=firefoxbrowser&logoColor=white)](release/2.0.0/currency-converter-pro-2.0.0-firefox.zip)
 
 **[View the complete changelog →](CHANGELOG.md)**
+
+[Screenshots](#-screenshots) · [Features](#features) · [Install](#installation) · [Use](#-how-to-use-it) · [How it works](#-how-it-works) · [Detection](#-currency-detection-confidence) · [Privacy](#-privacy-and-permissions) · [Limitations](#-limitations) · [Build](#-building-a-release) · [Development](#-development)
 
 ## 📸 Screenshots
 
@@ -108,15 +112,9 @@ The currency with the highest score becomes the AUTO candidate. The runner-up sc
 - **Medium confidence:** the winning score is at least 30 and at least 10 points above second place.
 - **Low confidence:** the evidence does not meet either threshold, so page conversion asks for a manually selected source currency.
 
-These values are heuristic confidence scores, not statistically calibrated probabilities. A probability-like estimate can be produced with an unknown-currency baseline:
+These are heuristic confidence scores, not calibrated probabilities.
 
-$$
-P(c)=\frac{e^{S(c)/T}}{e^{U/T}+\sum_k e^{S(k)/T}}
-$$
-
-Suggested starting parameters are $T=20$, which controls how strongly score differences affect the result, and $U=30$, which represents **currency unknown**. The output should be described as a **detection confidence estimate** until it has been calibrated against a large labeled collection of real webpages.
-
-For example, if JSON-LD identifies EUR, the page uses a `.de` domain, and its language is `de-DE`, EUR receives $100+20+15=135$ points. If USD appears only twice as visible text, USD receives 20 points. With the suggested parameters, the resulting EUR confidence estimate is approximately 99%.
+**Worked example.** JSON-LD identifies EUR, the domain is `.de`, and the page language is `de-DE`: EUR scores $100+20+15=135$. USD appears twice as visible text: 20 points. EUR clears both the 70-point floor and the 20-point gap, so detection reports **high confidence**.
 
 ## 🔐 Privacy and permissions
 
@@ -195,6 +193,19 @@ npm run build:firefox
 
 The build composes `manifests/base.json` with the selected browser override and copies only `src/` runtime assets into each package. Tests, reports, documentation, source manifests, and development files are excluded from the release archives.
 
+## 🧪 Development
+
+```bash
+npm ci                        # exact pinned dev dependencies
+npm run verify                # project checks plus the unit suite
+npm test                      # unit tests only
+npm run test:browser          # Chrome extension tests, via Playwright
+npm run test:browser:firefox  # real Firefox runtime test, via geckodriver
+npm run lint:firefox          # web-ext validation of the Firefox package
+```
+
+CI runs every one of these on each push. `npm run build:icons` and `npm run build:store-assets` regenerate the extension icons and store imagery.
+
 ## 📦 Recent releases
 
 | Version | Highlights | Download |
@@ -204,15 +215,6 @@ The build composes `manifests/base.json` with the selected browser override and 
 | 1.9.1 | Fixed Chrome and Firefox toolbar popup sizing, scrolling, and browser-native control rendering | [Chrome](release/1.9.1/currency-converter-pro-1.9.1-chrome.zip) · [Firefox](release/1.9.1/currency-converter-pro-1.9.1-firefox.zip) |
 | 1.9.0 | Custom converted-price colors and shapes, live before-and-after preview, WCAG contrast guidance, and one-click reset | [Chrome](release/1.9.0/currency-converter-pro-1.9.0-chrome.zip) · [Firefox](release/1.9.0/currency-converter-pro-1.9.0-firefox.zip) |
 | 1.8.0 | Always-on local price detection, price-gated on-page prompts, background rate prefetching, and instant stale-cache use while rates refresh | [Chrome](release/1.8.0/currency-converter-pro-1.8.0-chrome.zip) · [Firefox](release/1.8.0/currency-converter-pro-1.8.0-firefox.zip) |
-| 1.7.3 | Restored temporary one-time access, exact-origin automatic conversion, a simplified one-action popup, and a visible privacy reset for 1.7.0–1.7.2 upgrades | [Chrome](release/1.7.3/currency-converter-pro-1.7.3-chrome.zip) · [Firefox](release/1.7.3/currency-converter-pro-1.7.3-firefox.zip) |
-| 1.6.2 | Complete Allegro split-decimal prices, duplicate prevention, and stricter product-title filtering | [Chrome](release/1.6.2/currency-converter-pro-1.6.2-chrome.zip) · [Firefox](release/1.6.2/currency-converter-pro-1.6.2-firefox.zip) |
-| 1.6.1 | Digitec-style split prices, reliable Firefox page injection, clearer protected-page errors, and real Firefox browser coverage | [Chrome](release/1.6.1/currency-converter-pro-1.6.1-chrome.zip) · [Firefox](release/1.6.1/currency-converter-pro-1.6.1-firefox.zip) |
-| 1.6.0 | Shared Chrome/Firefox source, browser-specific manifests, dual builds, and Firefox validation | [Chrome](release/1.6.0/currency-converter-pro-1.6.0-chrome.zip) · [Firefox](release/1.6.0/currency-converter-pro-1.6.0-firefox.zip) |
-| 1.5.1 | Searchable currency selectors, refined dropdown styling, accessible animations, and a stable Page options reveal | [Chrome](release/1.5.1/currency-converter-1.5.1-chrome-store.zip) |
-| 1.5.0 | Quick amount converter, remembered websites, dynamic-page support, display modes, provider catalog, and resilient rate caching | [Chrome](release/1.5.0/currency-converter-1.5.0-chrome-store.zip) |
-| 1.4.2 | Clean Store package with regression verification | [Chrome](release/1.4.2/currency-converter-1.4.2-chrome-store.zip) |
-| 1.4.1 | Reduced default website access with `activeTab`, `scripting`, and user-triggered injection | [Chrome](release/1.4.1/currency-converter-1.4.1-chrome-store.zip) |
-| 1.4.0 | Improved detector accuracy, split-price handling, regression tests, and Store icons | [Chrome](release/1.4.0/currency-converter-1.4.0-chrome-store.zip) |
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
 
