@@ -4,9 +4,9 @@ Currency Converter Pro is a Chrome and Firefox extension that converts prices on
 
 Detection, conversion, and rendering all happen inside your browser. The only thing that ever leaves it is an ISO currency code such as `USD` or `EUR` — never page content, prices, or the sites you visit.
 
-**Current version:** 2.0.0 · **Platforms:** Chrome and Firefox Manifest V3 · **Firefox:** 140+ · Android 142+ · **License:** MIT
+**Current version:** 2.0.1 · **Platforms:** Chrome and Firefox Manifest V3 · **Firefox:** 140+ · Android 142+ · **License:** MIT
 
-[![Chrome Web Store](https://img.shields.io/badge/Chrome-Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/) [![Chrome build](https://img.shields.io/badge/Chrome-Build-4285F4?logo=googlechrome&logoColor=white)](release/2.0.0/currency-converter-pro-2.0.0-chrome.zip) [![Firefox build](https://img.shields.io/badge/Firefox-Build-FF7139?logo=firefoxbrowser&logoColor=white)](release/2.0.0/currency-converter-pro-2.0.0-firefox.zip)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome-Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/) [![Chrome build](https://img.shields.io/badge/Chrome-Build-4285F4?logo=googlechrome&logoColor=white)](release/2.0.1/currency-converter-pro-2.0.1-chrome.zip) [![Firefox build](https://img.shields.io/badge/Firefox-Build-FF7139?logo=firefoxbrowser&logoColor=white)](release/2.0.1/currency-converter-pro-2.0.1-firefox.zip)
 
 **[View the complete changelog →](CHANGELOG.md)**
 
@@ -49,7 +49,7 @@ Or select a single price to convert just that one:
 ## Installation
 
 - **Store installation:** Install Currency Converter Pro from the [Chrome Web Store](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) or [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/currencyconverterpro/).
-- **Manual installation:** Download the latest [Chrome build](release/2.0.0/currency-converter-pro-2.0.0-chrome.zip) or [Firefox build](release/2.0.0/currency-converter-pro-2.0.0-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
+- **Manual installation:** Download the latest [Chrome build](release/2.0.1/currency-converter-pro-2.0.1-chrome.zip) or [Firefox build](release/2.0.1/currency-converter-pro-2.0.1-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
 
 ## 🧭 How to use it
 
@@ -198,6 +198,7 @@ CI runs every one of these on each push. `npm run build:icons` and `npm run buil
 
 | Version | Highlights | Download |
 | --- | --- | --- |
+| 2.0.1 | Price detection about 1.7x faster, deduplicated runtime helpers, and a fix for the currency swap being refused | [Chrome](release/2.0.1/currency-converter-pro-2.0.1-chrome.zip) · [Firefox](release/2.0.1/currency-converter-pro-2.0.1-firefox.zip) |
 | 2.0.0 | Popup rebuilt around the live rate with a seven-day sparkline and freshness indicator, shared palette across every surface, and a new icon | [Chrome](release/2.0.0/currency-converter-pro-2.0.0-chrome.zip) · [Firefox](release/2.0.0/currency-converter-pro-2.0.0-firefox.zip) |
 | 1.9.2 | Behavior-preserving runtime refactor with more reliable SPA mutation scheduling, queued conversions, and in-place appearance updates | [Chrome](release/1.9.2/currency-converter-pro-1.9.2-chrome.zip) · [Firefox](release/1.9.2/currency-converter-pro-1.9.2-firefox.zip) |
 | 1.9.1 | Fixed Chrome and Firefox toolbar popup sizing, scrolling, and browser-native control rendering | [Chrome](release/1.9.1/currency-converter-pro-1.9.1-chrome.zip) · [Firefox](release/1.9.1/currency-converter-pro-1.9.1-firefox.zip) |

@@ -97,7 +97,7 @@
       if (settings.toCurrency !== globalSettings.toCurrency) {
         const conflict = await sitePreferences.findTargetCurrencyConflict(
           settings.toCurrency,
-          globalSettings,
+          remembered ? globalSettings.fromCurrency : settings.fromCurrency,
           site
         );
         if (conflict) {

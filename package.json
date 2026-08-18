@@ -1,6 +1,6 @@
 {
   "name": "currency-converter-pro-extension",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "Privacy-focused Manifest V3 currency conversion extension",
   "scripts": {

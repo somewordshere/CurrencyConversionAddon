@@ -575,6 +575,57 @@ test("remembering a site stores its preference and current source mode", async (
   assert.equal(resolved.fromCurrency, "USD");
 });
 
+test("swapping the global currency pair keeps the swapped target", async () => {
+  const background = createBackground({
+    sync: { ...DEFAULT_SYNC_SETTINGS, fromCurrency: "PLN", toCurrency: "EUR" }
+  });
+  background.context.CurrencyRateService = {
+    async getRates() {
+      return { ok: true, rates: { EUR: 1, PLN: 4.3, USD: 1.1 } };
+    }
+  };
+  stubCatalog(background.context, ["EUR", "PLN", "USD"], background.context.CurrencyRateService);
+
+  const result = await background.context.CurrencySettingsService.updateSettings(
+    { fromCurrency: "EUR", toCurrency: "PLN" },
+    "https://shop.example/product"
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(background.syncStore.fromCurrency, "EUR");
+  assert.equal(background.syncStore.toCurrency, "PLN");
+});
+
+test("global target change still rejects a target matching the unchanged default source", async () => {
+  const origin = "https://shop.example";
+  const background = createBackground({
+    sync: { ...DEFAULT_SYNC_SETTINGS, fromCurrency: "PLN", toCurrency: "EUR" },
+    local: {
+      autoConvertSites: { [origin]: true },
+      siteSourceCurrencies: { [origin]: "USD" }
+    }
+  });
+  background.context.CurrencyRateService = {
+    async getRates() {
+      return { ok: true, rates: { EUR: 1, PLN: 4.3, USD: 1.1 } };
+    }
+  };
+  stubCatalog(background.context, ["EUR", "PLN", "USD"], background.context.CurrencyRateService);
+  let syncWriteCount = 0;
+  background.context.ExtensionAPI.storage.sync.set = async () => {
+    syncWriteCount += 1;
+  };
+
+  const result = await background.context.CurrencySettingsService.updateSettings(
+    { fromCurrency: "EUR", toCurrency: "PLN" },
+    `${origin}/product`
+  );
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /matches your default source currency/);
+  assert.equal(syncWriteCount, 0);
+});
+
 test("global target change rejects a conflict with another remembered site's source", async () => {
   const otherOrigin = "https://other-shop.example";
   const background = createBackground({

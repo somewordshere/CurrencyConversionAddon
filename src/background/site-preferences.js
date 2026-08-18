@@ -190,11 +190,8 @@
       };
     }
 
-    async function findTargetCurrencyConflict(targetCurrency, globalSettings, activeSite) {
-      if (
-        globalSettings.fromCurrency !== "AUTO" &&
-        globalSettings.fromCurrency === targetCurrency
-      ) {
+    async function findTargetCurrencyConflict(targetCurrency, globalSourceCurrency, activeSite) {
+      if (globalSourceCurrency !== "AUTO" && globalSourceCurrency === targetCurrency) {
         return `The target ${targetCurrency} matches your default source currency. Change the default source first.`;
       }
 
