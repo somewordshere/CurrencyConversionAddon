@@ -10,7 +10,7 @@ Detection, conversion, and rendering all happen inside your browser. The only th
 
 **[View the complete changelog →](CHANGELOG.md)**
 
-[Screenshots](#-screenshots) · [Features](#features) · [Install](#installation) · [Use](#-how-to-use-it) · [How it works](#-how-it-works) · [Detection](#-currency-detection-confidence) · [Privacy](#-privacy-and-permissions) · [Limitations](#-limitations) · [Build](#-building-a-release) · [Development](#-development)
+[Screenshots](#-screenshots) · [Features](#features) · [Install](#installation) · [Use](#-how-to-use-it) · [How it works](#️-how-it-works) · [Detection](#-currency-detection-confidence) · [Privacy](#-privacy-and-permissions) · [Limitations](#️-limitations) · [Build](#️-building-a-release) · [Development](#-development)
 
 ## 📸 Screenshots
 
