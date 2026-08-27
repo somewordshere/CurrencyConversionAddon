@@ -22,6 +22,24 @@ const SPLIT_FRACTION_HTML = fs.readFileSync(
   path.resolve(__dirname, "../fixtures/allegro-split-fraction.html"),
   "utf8"
 );
+const TAP_AZ_URL = "https://api.frankfurter.dev/tap-az-listing";
+const TAP_AZ_HTML = fs.readFileSync(
+  path.resolve(__dirname, "../fixtures/tap-az-listing.html"),
+  "utf8"
+);
+const TRENDYOL_URL = "https://api.frankfurter.dev/trendyol-lira";
+const TRENDYOL_HTML = fs.readFileSync(
+  path.resolve(__dirname, "../fixtures/trendyol-lira.html"),
+  "utf8"
+);
+
+function serveFixture(page, url, body) {
+  return page.route(url, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body
+  }));
+}
 
 test("real action popup keeps its designed width and scrolls expanded options", async ({
   context,
@@ -259,6 +277,90 @@ test("re-offers conversion after an in-page route change", async ({
   // navigation and must not bring the dismissed offer back.
   await shop.waitForTimeout(2000);
   await expect(shop.locator(".ccp-page-prompt")).toHaveCount(0);
+});
+
+// The four faults reported together on 2026-08-27, each pinned against the markup
+// of the site that exposed it rather than a structural stand-in.
+
+test("reported: tap.az converts manat prices React split across text nodes", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, { settings: { showPagePrompt: true } });
+  const shop = await context.newPage();
+  await serveFixture(shop, TAP_AZ_URL, TAP_AZ_HTML);
+  await shop.goto(TAP_AZ_URL);
+
+  // Discovery reads textContent and so always saw these prices; conversion read
+  // one text node at a time and saw none. The offer appearing and then finding
+  // nothing to convert is the exact reported symptom.
+  await expect(shop.locator(".ccp-page-prompt")).toBeVisible();
+  const conversion = await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION", TAP_AZ_URL);
+  expect(conversion.ok).toBe(true);
+  expect(conversion.count).toBe(2);
+  expect(conversion.detectedCurrency).toBe("AZN");
+  await expect(shop.locator("#listing-price-one .ccp-badge")).toContainText("33.000,00");
+  await expect(shop.locator("#listing-price-two .ccp-badge")).toContainText("75,00");
+  // An amount inside a linked product title is not a price on offer.
+  await expect(shop.locator(".ad-card-title ccp-conversion")).toHaveCount(0);
+});
+
+test("reported: Trendyol converts lira written as TL", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker);
+  const shop = await context.newPage();
+  await serveFixture(shop, TRENDYOL_URL, TRENDYOL_HTML);
+  await shop.goto(TRENDYOL_URL);
+
+  const conversion = await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION", TRENDYOL_URL);
+  expect(conversion.ok).toBe(true);
+  expect(conversion.detectedCurrency).toBe("TRY");
+  await expect(shop.locator("#lira-price .ccp-badge")).toContainText("25,00");
+  await expect(shop.locator("#lira-price-split .ccp-badge")).toContainText("17,98");
+  // A review count is not a price, whatever the page currency is.
+  await expect(shop.locator(".rating-line ccp-conversion")).toHaveCount(0);
+});
+
+test("reported: converted-only hides a manat price on a real listing", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, { settings: { displayMode: "beside" } });
+  const shop = await context.newPage();
+  await serveFixture(shop, TAP_AZ_URL, TAP_AZ_HTML);
+  await shop.goto(TAP_AZ_URL);
+  await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION", TAP_AZ_URL);
+
+  // Rendered text, not textContent: "converted only" hides the original rather
+  // than deleting it, so only innerText shows what a visitor actually reads.
+  const price = shop.locator("#listing-price-one");
+  await expect(price).toContainText("66 000", { useInnerText: true });
+
+  await extensionWorker.evaluate(() => chrome.storage.sync.set({ displayMode: "replace" }));
+  await expect(price).not.toContainText("66 000", { useInnerText: true });
+  await expect(price).toContainText("33.000,00", { useInnerText: true });
+
+  await extensionWorker.evaluate(() => chrome.storage.sync.set({ displayMode: "beside" }));
+  await expect(price).toContainText("66 000", { useInnerText: true });
+});
+
+test("reported: the offer returns after an in-page route change on a listing", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, { settings: { showPagePrompt: true } });
+  const shop = await context.newPage();
+  await serveFixture(shop, TAP_AZ_URL, TAP_AZ_HTML);
+  await shop.goto(TAP_AZ_URL);
+
+  await expect(shop.locator(".ccp-page-prompt")).toBeVisible();
+  await shop.locator(".ccp-page-prompt-close").click();
+  await expect(shop.locator(".ccp-page-prompt")).toHaveCount(0);
+
+  await shop.evaluate(() => history.pushState({}, "", "/elanlar/dasinmaz-emlak"));
+  await expect(shop.locator(".ccp-page-prompt")).toBeVisible();
 });
 
 test("off-state popup turns on and converts the active page with one click", async ({

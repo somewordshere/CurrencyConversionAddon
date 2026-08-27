@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  The shape tap.az actually ships: a server-rendered React listing whose price
+  elements hold no child elements at all, only an amount text node, the comment
+  React writes between interpolated values, and a separate symbol text node.
+  Neither text node carries a price on its own.
+-->
+<html lang="az">
+  <head>
+    <meta charset="utf-8">
+    <title>Tap.az listing fixture</title>
+  </head>
+  <body>
+    <main>
+      <div class="filter-chip" data-testid="inline-price-filter">Qiymət, AZN</div>
+      <a class="ad-card" href="/elanlar/1">
+        <p class="ad-card-title">Bakı şəhəri, Nərimanov r., 3 otaqlı</p>
+        <p id="listing-price-one" data-testid="ad-card-price" class="AdCardNew-styled__Price">66 000<!-- --> ₼</p>
+      </a>
+      <a class="ad-card" href="/elanlar/2">
+        <p class="ad-card-title">Sumqayıt, 2 otaqlı</p>
+        <p id="listing-price-two" data-testid="ad-card-price" class="AdCardNew-styled__Price">150<!-- --> ₼</p>
+      </a>
+      <a class="ad-card" href="/elanlar/3">
+        <p class="ad-card-title">Netflix hədiyyə kartı 80 AZN | Kod</p>
+        <p class="ad-card-meta">Baxış sayı 240</p>
+      </a>
+    </main>
+  </body>
+</html>

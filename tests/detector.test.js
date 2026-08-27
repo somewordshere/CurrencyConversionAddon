@@ -255,6 +255,20 @@ assert.equal(
   "Turkish pages price in TL, not in the lira sign"
 );
 
+// A product page shows a price once or twice, not a grid of them. Detection has
+// to resolve on that, or every Turkish detail page falls back to "select the
+// source currency manually".
+const sparseTurkishProduct = detectorForPage({
+  lang: "tr",
+  hostname: "www.trendyol.com",
+  bodyText: "Kadın Elbise 1.250,00 TL Sepete Ekle 4,6 (218 değerlendirme)"
+});
+assert.notEqual(
+  sparseTurkishProduct.getPageCurrencyDetection().confidence,
+  "low",
+  "a Turkish page with a single TL price must still resolve"
+);
+
 const germanRecipe = detectorForPage({
   lang: "de-DE",
   hostname: "www.chefkoch.de",

@@ -360,11 +360,13 @@
       let count = 0;
       while (count < MAX_COUNTED_PRICE_MARKERS && pattern.exec(bodyText) !== null) count += 1;
       if (!count) continue;
-      add(
-        currency,
-        needsContext ? Math.min(20, count * 5) : Math.min(30, count * 10),
-        "visible price marker"
-      );
+      // A corroborated marker is worth more per occurrence than an unambiguous
+      // one, which reads backwards until you notice what the gate above already
+      // did: the page independently named this currency, so each priced "TL" only
+      // has to confirm that, not discover it. Weighting it like a first sighting
+      // left product pages — one price, not a grid of them — unresolvable, which
+      // is the whole case the marker signal exists to serve.
+      add(currency, Math.min(30, count * (needsContext ? 15 : 10)), "visible price marker");
     }
   }
 

@@ -28,6 +28,13 @@ const PROVIDER_CURRENCIES = Object.freeze([
     endDate: RATE_DATE
   }),
   Object.freeze({
+    code: "AZN",
+    name: "Azerbaijani Manat",
+    symbol: "₼",
+    startDate: "1999-01-04",
+    endDate: RATE_DATE
+  }),
+  Object.freeze({
     code: "CHF",
     name: "Swiss Franc",
     symbol: "CHF",
@@ -49,6 +56,13 @@ const PROVIDER_CURRENCIES = Object.freeze([
     endDate: RATE_DATE
   }),
   Object.freeze({
+    code: "TRY",
+    name: "Turkish Lira",
+    symbol: "₺",
+    startDate: "1999-01-04",
+    endDate: RATE_DATE
+  }),
+  Object.freeze({
     code: "USD",
     name: "United States Dollar",
     symbol: "$",
@@ -59,10 +73,13 @@ const PROVIDER_CURRENCIES = Object.freeze([
 
 const CATALOG_SIGNATURE = PROVIDER_CURRENCIES.map((currency) => currency.code).join(",");
 
+// Round rates, so a fixture price converts to a value a reader can check by eye.
 const RATES_BY_BASE = Object.freeze({
   USD: Object.freeze({ USD: 1, EUR: 0.9, CHF: 0.8 }),
   CHF: Object.freeze({ CHF: 1, EUR: 1.08 }),
-  PLN: Object.freeze({ PLN: 1, EUR: 0.235 })
+  PLN: Object.freeze({ PLN: 1, EUR: 0.235 }),
+  AZN: Object.freeze({ AZN: 1, EUR: 0.5 }),
+  TRY: Object.freeze({ TRY: 1, EUR: 0.02 })
 });
 
 function createSeededExtensionState({

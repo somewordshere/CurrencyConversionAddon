@@ -1,0 +1,29 @@
+<!doctype html>
+<!--
+  The shape trendyol.com ships to Turkish visitors: prices written as "TL", never
+  as the lira sign and never as the ISO code. The only other evidence the page
+  gives that it prices in lira is its language attribute, which is what makes TL
+  resolvable without also turning a German recipe's "2 TL Zucker" into money.
+-->
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <title>Trendyol lira fixture</title>
+  </head>
+  <body>
+    <main>
+      <div class="p-card-wrppr">
+        <span class="prdct-desc-cntnr-ttl">Kadın Elbise</span>
+        <div id="lira-price" class="prc-box-dscntd">1.250,00 TL</div>
+      </div>
+      <div class="p-card-wrppr">
+        <span class="prdct-desc-cntnr-ttl">Erkek Ayakkabı</span>
+        <div id="lira-price-split" class="prc-box-dscntd">899,00<!-- --> TL</div>
+      </div>
+      <div class="p-card-wrppr">
+        <span class="prdct-desc-cntnr-ttl">Kargo Bedava</span>
+        <div class="rating-line">4,6 (218 değerlendirme)</div>
+      </div>
+    </main>
+  </body>
+</html>

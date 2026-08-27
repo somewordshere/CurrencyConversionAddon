@@ -16,24 +16,25 @@ const conversionTimeoutMs = Number(process.env.CCP_LIVE_CONVERSION_TIMEOUT_MS ||
 const args = new Set(process.argv.slice(2));
 
 const currencyNames = {
-  AUD: "Australian Dollar", BRL: "Brazilian Real", CAD: "Canadian Dollar",
+  AUD: "Australian Dollar", AZN: "Azerbaijani Manat", BRL: "Brazilian Real", CAD: "Canadian Dollar",
   CHF: "Swiss Franc", CNY: "Chinese Yuan", EUR: "Euro", GBP: "British Pound",
   HKD: "Hong Kong Dollar", INR: "Indian Rupee", JPY: "Japanese Yen",
   KRW: "South Korean Won", MXN: "Mexican Peso", NOK: "Norwegian Krone",
   NZD: "New Zealand Dollar", PLN: "Polish Zloty", SEK: "Swedish Krona",
-  SGD: "Singapore Dollar", TWD: "New Taiwan Dollar", USD: "US Dollar",
+  SGD: "Singapore Dollar", TRY: "Turkish Lira", TWD: "New Taiwan Dollar", USD: "US Dollar",
   ZAR: "South African Rand"
 };
 
 const currencySymbols = {
-  AUD: "A$", BRL: "R$", CAD: "C$", CHF: "CHF", CNY: "¥", EUR: "€",
+  AUD: "A$", AZN: "₼", BRL: "R$", CAD: "C$", CHF: "CHF", CNY: "¥", EUR: "€",
   GBP: "£", HKD: "HK$", INR: "₹", JPY: "¥", KRW: "₩", MXN: "MX$",
-  NOK: "kr", NZD: "NZ$", PLN: "zł", SEK: "kr", SGD: "S$", TWD: "NT$",
+  NOK: "kr", NZD: "NZ$", PLN: "zł", SEK: "kr", SGD: "S$", TRY: "TL", TWD: "NT$",
   USD: "$", ZAR: "R"
 };
 
 const markerPatterns = {
   AUD: /(?:A\$|AUD)\s*\d|\d[\d.,\s]*\s*AUD/gi,
+  AZN: /(?:₼|AZN)\s*\d|\d[\d.,\s]*\s*(?:₼|AZN)/gi,
   BRL: /(?:R\$|BRL)\s*\d|\d[\d.,\s]*\s*BRL/gi,
   CAD: /(?:C\$|CAD)\s*\d|\d[\d.,\s]*\s*CAD/gi,
   CHF: /CHF\s*\d|\d[\d.,'’\s]*\s*CHF/gi,
@@ -50,6 +51,7 @@ const markerPatterns = {
   PLN: /PLN\s*\d|\d[\d.,\s]*\s*(?:PLN|zł)/gi,
   SEK: /SEK\s*\d|\d[\d.,\s]*\s*(?:SEK|kr)/gi,
   SGD: /(?:S\$|SGD)\s*\d|\d[\d.,\s]*\s*SGD/gi,
+  TRY: /(?:₺|TRY)\s*\d|\d[\d.,\s]*\s*(?:₺|TL|TRY)/gi,
   TWD: /(?:NT\$|TWD)\s*\d|\d[\d.,\s]*\s*TWD/gi,
   USD: /(?:US\$|USD|\$)\s*\d|\d[\d.,\s]*\s*USD/gi,
   ZAR: /ZAR\s*\d|R\s*\d|\d[\d.,\s]*\s*ZAR/gi

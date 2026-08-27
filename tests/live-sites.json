@@ -117,5 +117,12 @@
   { "currency": "PLN", "name": "Amazon Poland", "url": "https://www.amazon.pl/" },
   { "currency": "PLN", "name": "Media Expert", "url": "https://www.mediaexpert.pl/" },
   { "currency": "PLN", "name": "RTV Euro AGD", "url": "https://www.euro.com.pl/" },
-  { "currency": "PLN", "name": "Empik", "url": "https://www.empik.com/" }
+  { "currency": "PLN", "name": "Empik", "url": "https://www.empik.com/" },
+
+  { "currency": "AZN", "name": "Tap.az", "url": "https://tap.az/elanlar/dasinmaz-emlak" },
+  { "currency": "AZN", "name": "Turbo.az", "url": "https://turbo.az/" },
+
+  { "currency": "TRY", "name": "Trendyol", "url": "https://www.trendyol.com/" },
+  { "currency": "TRY", "name": "Hepsiburada", "url": "https://www.hepsiburada.com/" },
+  { "currency": "TRY", "name": "n11", "url": "https://www.n11.com/" }
 ]
