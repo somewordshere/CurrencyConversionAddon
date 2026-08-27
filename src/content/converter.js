@@ -509,7 +509,7 @@
     for (let level = 0; element && level < 3; level += 1, element = element.parentElement) {
       const text = element.textContent?.trim();
       if (!text || text.length > 100) continue;
-      if (!POSSIBLE_PRICE_TEXT_PATTERN.test(text) || element.childElementCount === 0) continue;
+      if (!POSSIBLE_PRICE_TEXT_PATTERN.test(text) || !holdsSplitPrice(element)) continue;
       const matches = CurrencyDetector.findMatchesForContext(text, element, settings);
       if (!matches.some((match) => CurrencyDetector.hasCurrencyMarker(nodeText, match.currency))) {
         continue;
@@ -557,7 +557,7 @@
     const plans = [];
     for (const element of [...elements].reverse()) {
       if (
-        element.childElementCount === 0 ||
+        !holdsSplitPrice(element) ||
         element.matches(PRICE_FRAGMENT_SELECTOR) ||
         element.closest("[hidden], [inert], [aria-hidden='true'], template") ||
         element.isContentEditable ||
@@ -574,6 +574,21 @@
       plans.push({ element, originalText: text, matches: [matches[0]] });
     }
     return plans;
+  }
+
+  // Whether the element's text is spread over more than one node, so no single
+  // text node carries a whole price. Child elements are the obvious case, but a
+  // server-rendered React amount is "66 000<!-- --> ₼": no child elements at
+  // all, and two text nodes that mean nothing apart.
+  function holdsSplitPrice(element) {
+    if (element.childElementCount > 0) return true;
+    let textNodes = 0;
+    for (const child of element.childNodes) {
+      if (child.nodeType !== Node.TEXT_NODE || !child.nodeValue?.trim()) continue;
+      textNodes += 1;
+      if (textNodes > 1) return true;
+    }
+    return false;
   }
 
   function elementHasCompletePriceNode(element) {
@@ -689,23 +704,53 @@
     const match = matches.find((candidate) => activeRatesByBase[candidate.currency]?.[settings.toCurrency]);
     if (!match) return 0;
 
+    const displayMode = normalizeDisplayMode(settings);
     const badge = document.createElement("ccp-conversion");
     badge.dataset.ccpOwned = "true";
     badge.dataset.ccpAppended = "true";
+    badge.dataset.sourceCurrency = match.currency;
+    badge.dataset.displayMode = displayMode;
     badge.className = "ccp-conversion";
     badge.style.setProperty("display", "inline", "important");
-    const converted = createConvertedBadge(match, { adjacent: true });
-    badge.appendChild(converted);
+    badge.appendChild(createConvertedBadge(match, { adjacent: displayMode !== "replace" }));
+    if (displayMode === "replace") captureOriginalContent(badge, element);
     element.appendChild(badge);
     conversionRegistry.add(badge);
     return 1;
   }
 
+  // A split price is drawn across nodes the extension does not own, so "converted
+  // only" cannot simply hide a wrapper it created. Moving those nodes inside the
+  // badge makes one style rule hide them and one move put them back — and leaves
+  // the default side-by-side mode appending, without touching the site's DOM.
+  function captureOriginalContent(badge, host) {
+    if (!host || badge.querySelector(":scope > .ccp-original")) return;
+    const original = document.createElement("span");
+    original.className = "ccp-original";
+    original.style.setProperty("display", "none", "important");
+    for (const child of [...host.childNodes]) {
+      if (child !== badge) original.appendChild(child);
+    }
+    badge.prepend(original);
+  }
+
+  function releaseOriginalContent(badge) {
+    const original = badge.querySelector(":scope > .ccp-original");
+    if (!original || !badge.parentNode) return;
+    badge.before(...original.childNodes);
+    original.remove();
+  }
+
+  function normalizeDisplayMode(value) {
+    return value?.displayMode === "replace" ? "replace" : "beside";
+  }
+
   function buildConvertedNode(match) {
+    const displayMode = normalizeDisplayMode(settings);
     const wrapper = document.createElement("ccp-conversion");
     wrapper.dataset.ccpOwned = "true";
     wrapper.dataset.sourceCurrency = match.currency;
-    wrapper.dataset.displayMode = settings.displayMode === "replace" ? "replace" : "beside";
+    wrapper.dataset.displayMode = displayMode;
     wrapper.className = "ccp-conversion";
     wrapper.style.setProperty("display", "inline", "important");
     const original = document.createElement("span");
@@ -713,11 +758,11 @@
     original.textContent = match.raw;
     original.style.setProperty(
       "display",
-      settings.displayMode === "replace" ? "none" : "inline",
+      displayMode === "replace" ? "none" : "inline",
       "important"
     );
     const converted = createConvertedBadge(match, {
-      adjacent: settings.displayMode !== "replace"
+      adjacent: displayMode !== "replace"
     });
     wrapper.append(original, converted);
     conversionRegistry.add(wrapper);
@@ -754,9 +799,12 @@
 
   function updateConvertedPresentation(wrapper, nextSettings) {
     const appended = wrapper.dataset.ccpAppended === "true";
-    const displayMode = nextSettings.displayMode === "replace" ? "replace" : "beside";
-    if (!appended) {
-      wrapper.dataset.displayMode = displayMode;
+    const displayMode = normalizeDisplayMode(nextSettings);
+    wrapper.dataset.displayMode = displayMode;
+    if (appended) {
+      if (displayMode === "replace") captureOriginalContent(wrapper, wrapper.parentElement);
+      else releaseOriginalContent(wrapper);
+    } else {
       wrapper.querySelector(".ccp-original")?.style.setProperty(
         "display",
         displayMode === "replace" ? "none" : "inline",
@@ -765,7 +813,7 @@
     }
     const converted = wrapper.querySelector(".ccp-badge");
     if (converted) applyConvertedAppearance(converted, {
-      adjacent: appended || displayMode !== "replace"
+      adjacent: displayMode !== "replace"
     });
   }
 

@@ -174,6 +174,93 @@ test("converts marked prices split across neutral, obfuscated elements", async (
   await expect(allegro.locator("#allegro-title ccp-conversion")).toHaveCount(0);
 });
 
+// Server-rendered React writes an interpolated price as "1 299<!-- --> $": no
+// child elements, and two text nodes that carry no price on their own. Reading
+// only whole text nodes and only element-split prices missed every one of them.
+test("converts a price the site split across bare text nodes", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker);
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: `<!doctype html>
+      <head><meta property="product:price:currency" content="USD"></head>
+      <body><main>
+        <p id="react-price" class="product-price">1 299<!-- --> $</p>
+      </main></body>`
+  }));
+  await shop.goto(SHOP_URL);
+
+  const conversion = await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION");
+  expect(conversion.ok).toBe(true);
+  expect(conversion.count).toBe(1);
+  await expect(shop.locator("#react-price .ccp-badge")).toContainText("1.169,10");
+});
+
+test("converted-only hides a price the site split across elements", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, { settings: { displayMode: "beside" } });
+  const shop = await context.newPage();
+  await shop.route(SPLIT_PRICE_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SPLIT_PRICE_HTML
+  }));
+  await shop.goto(SPLIT_PRICE_URL);
+
+  const conversion = await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION", SPLIT_PRICE_URL);
+  expect(conversion.count).toBe(1);
+  // Rendered text, not textContent: "converted only" hides the original rather
+  // than deleting it, so only innerText shows what a visitor actually reads.
+  const priceHost = shop.locator("#digitec-price");
+  await expect(priceHost).toContainText("439", { useInnerText: true });
+
+  await extensionWorker.evaluate(() => chrome.storage.sync.set({ displayMode: "replace" }));
+  await expect(priceHost).not.toContainText("439", { useInnerText: true });
+  await expect(shop.locator("#digitec-price .ccp-badge")).toBeVisible();
+
+  // Switching back has to hand the site its own markup back, untouched.
+  await extensionWorker.evaluate(() => chrome.storage.sync.set({ displayMode: "beside" }));
+  await expect(priceHost).toContainText("439", { useInnerText: true });
+  await expect(shop.locator("#digitec-price > span.yAa8UXh")).toHaveText(/CHF/);
+});
+
+test("re-offers conversion after an in-page route change", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, { settings: { fromCurrency: "USD", showPagePrompt: true } });
+  const shop = await context.newPage();
+  await shop.route(UNAPPROVED_SHOP_URL, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html; charset=utf-8",
+    body: SHOP_HTML
+  }));
+  await shop.goto(UNAPPROVED_SHOP_URL);
+
+  await expect(shop.locator(".ccp-page-prompt")).toBeVisible();
+  await shop.locator(".ccp-page-prompt-close").click();
+  await expect(shop.locator(".ccp-page-prompt")).toHaveCount(0);
+
+  // A single-page app swaps its whole catalogue without reloading the document,
+  // so the offer made at document_idle would otherwise be the only one ever made.
+  await shop.evaluate(() => history.pushState({}, "", "/route-two"));
+  await expect(shop.locator(".ccp-page-prompt")).toBeVisible();
+
+  await shop.locator(".ccp-page-prompt-close").click();
+  await expect(shop.locator(".ccp-page-prompt")).toHaveCount(0);
+  await shop.evaluate(() => { window.location.hash = "#reviews"; });
+  // Long enough for the route poll to have run: a plain anchor is not a
+  // navigation and must not bring the dismissed offer back.
+  await shop.waitForTimeout(2000);
+  await expect(shop.locator(".ccp-page-prompt")).toHaveCount(0);
+});
+
 test("off-state popup turns on and converts the active page with one click", async ({
   context,
   extensionWorker,

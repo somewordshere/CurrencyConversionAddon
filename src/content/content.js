@@ -3,10 +3,14 @@
   globalThis.__ccpContentInitialized = true;
 
   const M = CurrencyMessages;
+  // History routing fires no event of its own, so a slow poll is the portable
+  // backstop behind popstate/hashchange and the Navigation API.
+  const ROUTE_POLL_INTERVAL_MS = 1000;
   let settings = null;
   let settingsLoadPromise = null;
   let pageCommandGeneration = 0;
   let renderedConversionSettingsKey = null;
+  let currentRoute = readRouteKey();
 
   ExtensionAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === M.CONTENT_READY) {
@@ -62,7 +66,37 @@
   });
 
   CurrencyPageUi.installSelectionListeners();
+  installRouteChangeWatcher();
   settingsLoadPromise = loadSettings(pageCommandGeneration, { failClosed: true });
+
+  // Single-page apps swap the whole catalogue without reloading the document, so
+  // the one-shot offer made at document_idle is the only one a visitor ever gets
+  // unless in-page routing is watched for as well.
+  function installRouteChangeWatcher() {
+    window.addEventListener("popstate", handleRouteChange);
+    window.addEventListener("hashchange", handleRouteChange);
+    globalThis.navigation?.addEventListener?.("navigatesuccess", handleRouteChange);
+    window.setInterval(handleRouteChange, ROUTE_POLL_INTERVAL_MS);
+  }
+
+  function handleRouteChange() {
+    const nextRoute = readRouteKey();
+    if (nextRoute === currentRoute) return;
+    currentRoute = nextRoute;
+    // Converted pages are already watched: their observer resets detection and
+    // rescans on its own, and re-offering over live conversions would be noise.
+    if (CurrencyPageConverter.hasConversions()) return;
+    CurrencyDetector.resetPageCurrencyDetection();
+    CurrencyPageUi.removePageConvertPrompt();
+    queueSettingsTask(() => applySitePreference(pageCommandGeneration));
+  }
+
+  // Hash-routed apps put a path after "#/", while a plain "#section" anchor is
+  // not a navigation and must not re-offer the prompt.
+  function readRouteKey() {
+    const { pathname, search, hash } = window.location;
+    return `${pathname}${search}${hash.startsWith("#/") ? hash : ""}`;
+  }
 
   function handleMessage(message) {
     switch (message?.type) {

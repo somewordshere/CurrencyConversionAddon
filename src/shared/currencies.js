@@ -44,7 +44,7 @@
     SEK: { symbols: ["kr"], locale: "sv-SE" },
     SGD: { symbols: ["S$"], locale: "en-SG" },
     THB: { symbols: ["฿"], locale: "th-TH" },
-    TRY: { symbols: ["₺"], locale: "tr-TR" },
+    TRY: { symbols: ["₺", "TL"], locale: "tr-TR" },
     TWD: { symbols: ["NT$"], locale: "zh-TW" },
     UAH: { symbols: ["₴", "грн"], locale: "uk-UA" },
     USD: { symbols: ["US$", "$"], locale: "en-US" },
@@ -53,9 +53,12 @@
   };
 
   const CURRENCY_CODES = Object.keys(CURRENCY_META).sort();
+  // Markers that read as ordinary words elsewhere: "TL" is a German teaspoon in
+  // recipes, "kr" is three Nordic currencies, "R" is a letter. They only count
+  // once the page itself has been identified as using that currency.
   const CONTEXT_REQUIRED_SYMBOLS = new Set([
     "r", "fr", "fr.", "kr", "dh", "sr", "lei", "ft", "rp", "rm", "rs",
-    "ksh", "qr", "kd", "bd", "ro", "jd"
+    "ksh", "qr", "kd", "bd", "ro", "jd", "tl"
   ]);
   const currencyFormatters = new Map();
 

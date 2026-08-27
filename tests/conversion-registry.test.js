@@ -75,6 +75,33 @@ test("default restoration removes appended badges and replaces inline wrappers w
   assert.equal(registry.size(), 0);
 });
 
+test("restoring an appended badge hands the site back the price nodes it parked", () => {
+  const priceNodes = [{ nodeValue: "CHF" }, { nodeValue: "439.–" }];
+  const returned = [];
+  const captured = { childNodes: priceNodes, removed: false };
+  const appended = {
+    isConnected: true,
+    dataset: { ccpAppended: "true" },
+    querySelector(selector) {
+      return selector === ":scope > .ccp-original" ? captured : null;
+    },
+    before(...nodes) {
+      returned.push(...nodes);
+    },
+    remove() {
+      this.removed = true;
+    }
+  };
+  const registry = create();
+  registry.add(appended);
+
+  registry.restoreAll();
+
+  assert.deepEqual(returned, priceNodes, "captured price nodes must go back before the badge");
+  assert.equal(appended.removed, true);
+  assert.equal(registry.size(), 0);
+});
+
 test("updates presentation in place for connected conversions only", () => {
   const updated = [];
   const registry = create({
