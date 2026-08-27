@@ -235,66 +235,112 @@ function detectorForPage({ lang, hostname, bodyText }) {
   return pageContext.CurrencyDetector;
 }
 
-const turkishStorefront = detectorForPage({
-  lang: "tr",
-  hostname: "www.trendyol.com",
-  bodyText: "Sepetim 249,90 TL Elbise 1.299,90 TL Ayakkabı 899,00 TL Indirim 79,90 TL"
-});
-const turkishDetection = turkishStorefront.getPageCurrencyDetection();
-assert.equal(turkishDetection.currency, "TRY");
-assert.notEqual(
-  turkishDetection.confidence,
-  "low",
-  "lira prices written as TL must identify a Turkish storefront"
-);
-assert.equal(
-  turkishStorefront.findCurrencyMatches("1.299,90 TL")
-    .map((match) => `${match.currency}:${match.amount}`)
-    .join(),
-  "TRY:1299.9",
-  "Turkish pages price in TL, not in the lira sign"
-);
+// Nothing used to assert what detectPageCurrency concluded, only what matched
+// once a conclusion was handed in. Both the lira bug and the sparse-page weakness
+// that followed it lived entirely in that gap: the matcher was right and the page
+// was never identified. Add a row here whenever a market misbehaves.
+const CONFIDENCE_RANK = { low: 0, medium: 1, high: 2 };
+const DETECTION_CASES = [
+  {
+    name: "Turkish storefront pricing in TL",
+    lang: "tr",
+    hostname: "www.trendyol.com",
+    bodyText: "Sepetim 249,90 TL Elbise 1.299,90 TL Ayakkabı 899,00 TL Indirim 79,90 TL",
+    currency: "TRY",
+    minConfidence: "medium",
+    converts: { "1.299,90 TL": "TRY:1299.9" }
+  },
+  {
+    // A product page shows a price once, not a grid of them.
+    name: "Turkish product page with a single TL price",
+    lang: "tr",
+    hostname: "www.trendyol.com",
+    bodyText: "Kadın Elbise 1.250,00 TL Sepete Ekle 4,6 (218 değerlendirme)",
+    currency: "TRY",
+    minConfidence: "medium"
+  },
+  {
+    name: "German recipe measuring in teaspoons",
+    lang: "de-DE",
+    hostname: "www.chefkoch.de",
+    bodyText: "Zutaten: 2 TL Zucker, 1 TL Salz, 3 TL Backpulver, 250 g Mehl, Preis 4,99 €",
+    notCurrency: "TRY",
+    inert: ["2 TL", "1 TL"]
+  },
+  {
+    name: "Azerbaijani marketplace pricing in manat",
+    lang: "az",
+    hostname: "tap.az",
+    bodyText: "Qiymət, AZN 2 600 ₼ 175 000 ₼ 65 ₼ 350 ₼ 220 ₼",
+    currency: "AZN",
+    minConfidence: "high",
+    converts: { "66 000 ₼": "AZN:66000" }
+  },
+  {
+    name: "English page mentioning a Turkish abbreviation",
+    lang: "en-US",
+    hostname: "www.example.com",
+    bodyText: "TL;DR the 3 TL of sugar note was wrong. Buy it for $19.99 today.",
+    notCurrency: "TRY",
+    inert: ["3 TL"]
+  },
+  {
+    name: "Swiss shop pricing in francs",
+    lang: "de-CH",
+    hostname: "www.example.ch",
+    bodyText: "Warenkorb CHF 1'419.95 Fr. 89.90 Fr. 24.50 Versand",
+    currency: "CHF",
+    minConfidence: "medium"
+  },
+  {
+    name: "Polish shop pricing in zloty",
+    lang: "pl",
+    hostname: "allegro.pl",
+    bodyText: "Koszyk 79,00 zł 1 299,00 zł 46,19 zł Dostawa",
+    currency: "PLN",
+    minConfidence: "medium",
+    converts: { "79,00 zł": "PLN:79" }
+  }
+];
 
-// A product page shows a price once or twice, not a grid of them. Detection has
-// to resolve on that, or every Turkish detail page falls back to "select the
-// source currency manually".
-const sparseTurkishProduct = detectorForPage({
-  lang: "tr",
-  hostname: "www.trendyol.com",
-  bodyText: "Kadın Elbise 1.250,00 TL Sepete Ekle 4,6 (218 değerlendirme)"
-});
-assert.notEqual(
-  sparseTurkishProduct.getPageCurrencyDetection().confidence,
-  "low",
-  "a Turkish page with a single TL price must still resolve"
-);
+for (const testCase of DETECTION_CASES) {
+  const pageDetector = detectorForPage(testCase);
+  const detection = pageDetector.getPageCurrencyDetection();
 
-const germanRecipe = detectorForPage({
-  lang: "de-DE",
-  hostname: "www.chefkoch.de",
-  bodyText: "Zutaten: 2 TL Zucker, 1 TL Salz, 3 TL Backpulver, 250 g Mehl, Preis 4,99 €"
-});
-assert.notEqual(
-  germanRecipe.getPageCurrencyDetection().currency,
-  "TRY",
-  "teaspoons in a German recipe must not read as a Turkish storefront"
-);
-assert.equal(
-  germanRecipe.findCurrencyMatches("2 TL").length,
-  0,
-  "TL must stay inert on pages that are not priced in lira"
-);
-
-const manatMarketplace = detectorForPage({
-  lang: "az",
-  hostname: "tap.az",
-  bodyText: "Qiymət, AZN 2 600 ₼ 175 000 ₼ 65 ₼ 350 ₼ 220 ₼"
-});
-assert.equal(manatMarketplace.getPageCurrencyDetection().currency, "AZN");
-assert.equal(
-  manatMarketplace.getPageCurrencyDetection().confidence,
-  "high",
-  "a page full of manat prices must be identified confidently"
-);
+  if (testCase.currency) {
+    assert.equal(
+      detection.currency,
+      testCase.currency,
+      `${testCase.name}: expected ${testCase.currency}, got ${detection.currency}`
+    );
+    assert.ok(
+      CONFIDENCE_RANK[detection.confidence] >= CONFIDENCE_RANK[testCase.minConfidence],
+      `${testCase.name}: confidence ${detection.confidence} is below ${testCase.minConfidence}`
+    );
+  }
+  if (testCase.notCurrency) {
+    assert.notEqual(
+      detection.currency,
+      testCase.notCurrency,
+      `${testCase.name}: must not be read as ${testCase.notCurrency}`
+    );
+  }
+  for (const [text, expected] of Object.entries(testCase.converts || {})) {
+    assert.equal(
+      pageDetector.findCurrencyMatches(text)
+        .map((match) => `${match.currency}:${match.amount}`)
+        .join(),
+      expected,
+      `${testCase.name}: ${text} must convert`
+    );
+  }
+  for (const text of testCase.inert || []) {
+    assert.equal(
+      pageDetector.findCurrencyMatches(text).length,
+      0,
+      `${testCase.name}: ${text} must not be treated as money`
+    );
+  }
+}
 
 console.log("detector tests passed");

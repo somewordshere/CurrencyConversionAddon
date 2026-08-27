@@ -1,0 +1,33 @@
+<!doctype html>
+<!--
+  Every shape a real storefront has been seen to draw a price in. The suite used
+  to hold only tidy markup — one text node, or a split across elements — which is
+  why a price React had split across two bare text nodes went unconverted on
+  tap.az for a whole release. When a new site turns up drawing prices some other
+  way, add it here and to the table in extension.spec.js.
+-->
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta itemprop="priceCurrency" content="USD">
+    <title>Price shapes fixture</title>
+  </head>
+  <body>
+    <main>
+      <p id="shape-single" class="product-price">$10.00</p>
+      <p id="shape-comment-prefix" class="product-price">$<!-- -->12.00</p>
+      <p id="shape-comment-suffix" class="product-price">25.00<!-- --> $</p>
+      <p id="shape-elements" class="product-price"><span>$</span><span>30.00</span></p>
+      <p id="shape-fraction" class="product-price"><span>$12.</span><span>50</span></p>
+      <p id="shape-nbsp" class="product-price">$&nbsp;40.00</p>
+      <p id="shape-narrow-nbsp" class="product-price">1&#8239;400&#8239;$</p>
+      <p id="shape-nested" class="product-price"><span><b>$</b>99.00</span></p>
+
+      <!-- None of these are prices, whatever the page currency is. -->
+      <p id="noise-rating" class="rating">4.8 out of 5</p>
+      <p id="noise-stock" class="availability">12 left in stock</p>
+      <p id="noise-model" class="product-model">RTX 5070 Ti</p>
+      <p id="noise-percent" class="discount">Save 20%</p>
+    </main>
+  </body>
+</html>

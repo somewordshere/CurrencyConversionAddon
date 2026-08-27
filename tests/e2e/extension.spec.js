@@ -33,6 +33,12 @@ const TRENDYOL_HTML = fs.readFileSync(
   "utf8"
 );
 
+const PRICE_SHAPES_URL = "https://api.frankfurter.dev/price-shapes";
+const PRICE_SHAPES_HTML = fs.readFileSync(
+  path.resolve(__dirname, "../fixtures/price-shapes.html"),
+  "utf8"
+);
+
 function serveFixture(page, url, body) {
   return page.route(url, (route) => route.fulfill({
     status: 200,
@@ -277,6 +283,114 @@ test("re-offers conversion after an in-page route change", async ({
   // navigation and must not bring the dismissed offer back.
   await shop.waitForTimeout(2000);
   await expect(shop.locator(".ccp-page-prompt")).toHaveCount(0);
+});
+
+// One row per way a storefront has been seen to draw a price. The suite only held
+// tidy markup before, which is how a price split across two bare text nodes
+// shipped unconverted; a new shape found in the wild belongs here.
+const PRICE_SHAPES = [
+  { id: "shape-single", note: "one text node", converted: "9,00" },
+  { id: "shape-comment-prefix", note: "React comment after the symbol", converted: "10,80" },
+  { id: "shape-comment-suffix", note: "React comment before the symbol", converted: "22,50" },
+  { id: "shape-elements", note: "symbol and amount in sibling elements", converted: "27,00" },
+  { id: "shape-fraction", note: "fraction in its own element", converted: "11,25" },
+  { id: "shape-nbsp", note: "non-breaking space after the symbol", converted: "36,00" },
+  { id: "shape-narrow-nbsp", note: "narrow no-break thousands separator", converted: "1.260,00" },
+  { id: "shape-nested", note: "symbol nested inside the amount", converted: "89,10" }
+];
+const PRICE_NOISE = ["noise-rating", "noise-stock", "noise-model", "noise-percent"];
+
+test("converts every price shape a storefront draws, and nothing else", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, { settings: { fromCurrency: "AUTO", toCurrency: "EUR" } });
+  const shop = await context.newPage();
+  await serveFixture(shop, PRICE_SHAPES_URL, PRICE_SHAPES_HTML);
+  await shop.goto(PRICE_SHAPES_URL);
+
+  const conversion = await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION", PRICE_SHAPES_URL);
+  expect(conversion.ok).toBe(true);
+  expect(conversion.detectedCurrency).toBe("USD");
+
+  for (const shape of PRICE_SHAPES) {
+    await expect(
+      shop.locator(`#${shape.id} .ccp-badge`),
+      `${shape.id} (${shape.note}) must convert`
+    ).toContainText(shape.converted);
+  }
+  for (const id of PRICE_NOISE) {
+    await expect(
+      shop.locator(`#${id} ccp-conversion`),
+      `${id} must not be treated as a price`
+    ).toHaveCount(0);
+  }
+});
+
+// A display mode and a rendering path are independent choices, and the suite used
+// to test the option against one path only. "Converted only" was therefore fully
+// broken on split prices through a release without a single test going red, so
+// both modes are now asserted against both paths.
+test("both display modes render correctly on both rendering paths", async ({
+  context,
+  extensionWorker
+}) => {
+  await seedExtension(extensionWorker, { settings: { displayMode: "beside" } });
+  const shop = await context.newPage();
+  await serveFixture(shop, PRICE_SHAPES_URL, PRICE_SHAPES_HTML);
+  await shop.goto(PRICE_SHAPES_URL);
+  await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION", PRICE_SHAPES_URL);
+
+  const inlinePath = shop.locator("#shape-single");
+  const appendedPath = shop.locator("#shape-elements");
+
+  // Rendered text, not textContent: "converted only" hides the original rather
+  // than deleting it, so only innerText shows what a visitor actually reads.
+  for (const [mode, showsOriginal] of [["beside", true], ["replace", false], ["beside", true]]) {
+    await extensionWorker.evaluate((displayMode) => chrome.storage.sync.set({ displayMode }), mode);
+    for (const [name, locator, original, converted] of [
+      ["inline", inlinePath, "$10.00", "9,00"],
+      ["appended", appendedPath, "$30.00", "27,00"]
+    ]) {
+      await expect(locator, `${name} path must always show the conversion in ${mode}`)
+        .toContainText(converted, { useInnerText: true });
+      if (showsOriginal) {
+        await expect(locator, `${name} path must show the original in ${mode}`)
+          .toContainText(original, { useInnerText: true });
+      } else {
+        await expect(locator, `${name} path must hide the original in ${mode}`)
+          .not.toContainText(original, { useInnerText: true });
+      }
+    }
+  }
+});
+
+// Undo has to give the page back exactly as it was found. This matters more since
+// "converted only" started moving the site's own nodes to hide them: a restore
+// that puts them back in the wrong place, or not at all, is silent damage to
+// someone else's page.
+test("undo restores the page's original markup byte for byte", async ({
+  context,
+  extensionWorker
+}) => {
+  for (const displayMode of ["beside", "replace"]) {
+    await seedExtension(extensionWorker, { settings: { displayMode } });
+    const shop = await context.newPage();
+    await serveFixture(shop, PRICE_SHAPES_URL, PRICE_SHAPES_HTML);
+    await shop.goto(PRICE_SHAPES_URL);
+
+    const before = await shop.locator("main").innerHTML();
+    const conversion = await runPageCommand(extensionWorker, "RUN_SITE_CONVERSION", PRICE_SHAPES_URL);
+    expect(conversion.count).toBeGreaterThan(0);
+    expect(await shop.locator("main").innerHTML()).not.toBe(before);
+
+    await runPageCommand(extensionWorker, "CLEAR_SITE_CONVERSION", PRICE_SHAPES_URL);
+    expect(
+      await shop.locator("main").innerHTML(),
+      `undo in ${displayMode} mode must restore the original markup`
+    ).toBe(before);
+    await shop.close();
+  }
 });
 
 // The four faults reported together on 2026-08-27, each pinned against the markup

@@ -564,7 +564,11 @@
         !isRendered(element) ||
         element.closest(OWNED_SELECTOR) ||
         element.querySelector(OWNED_SELECTOR) ||
-        plans.some((plan) => element.contains(plan.element))
+        // One badge per nested chain, in both directions. Guarding only against
+        // an element that wraps a planned one left "<p><span><b>$</b>99.00</span></p>"
+        // planned twice — once as the paragraph a price selector matched, once as
+        // the span a split text node nominated — and drawn twice on the page.
+        plans.some((plan) => element.contains(plan.element) || plan.element.contains(element))
       ) continue;
 
       const text = element.textContent?.trim();
