@@ -10,6 +10,8 @@
     buildMarkerPattern
   } = global.CurrencyNumberParser;
   const SYMBOL_GROUPS = createSymbolGroups();
+  const SINGLE_CURRENCY_MARKER_PATTERNS = createSingleCurrencyMarkerPatterns();
+  const MAX_COUNTED_PRICE_MARKERS = 4;
   const CURRENCY_CODE_PATTERN = new RegExp(
     `(?<![A-Za-z])(${CURRENCY_CODES.join("|")})(?![A-Za-z])`,
     "g"
@@ -321,6 +323,7 @@
     for (const [currency, count] of Object.entries(codeCounts)) {
       add(currency, Math.min(30, count * 10), "visible currency code");
     }
+    addVisiblePriceMarkerSignals(bodyText, scores, add);
 
     const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
     const [currency, score] = ranked[0];
@@ -338,6 +341,53 @@
       score,
       signals: currency ? signals[currency] : []
     };
+  }
+
+  // Prices written with a symbol rather than an ISO code are the only currency
+  // evidence many storefronts give: a Turkish page says "249,90 TL" and never
+  // "TRY". Counting those markers is what lets a context-required symbol resolve
+  // at all, so it stays deliberately conservative — unambiguous markers score on
+  // their own, ambiguous ones only corroborate a currency another signal named.
+  function addVisiblePriceMarkerSignals(bodyText, scores, add) {
+    if (!bodyText) return;
+    const lowerBodyText = bodyText.toLocaleLowerCase();
+    for (const { currency, needsContext, lowerMarkers, pattern } of SINGLE_CURRENCY_MARKER_PATTERNS) {
+      if (needsContext && !scores[currency]) continue;
+      // A substring test first: without it every currency absent from the page
+      // still costs a full regex pass over the body text.
+      if (!lowerMarkers.some((marker) => lowerBodyText.includes(marker))) continue;
+      pattern.lastIndex = 0;
+      let count = 0;
+      while (count < MAX_COUNTED_PRICE_MARKERS && pattern.exec(bodyText) !== null) count += 1;
+      if (!count) continue;
+      add(
+        currency,
+        needsContext ? Math.min(20, count * 5) : Math.min(30, count * 10),
+        "visible price marker"
+      );
+    }
+  }
+
+  function createSingleCurrencyMarkerPatterns() {
+    return SYMBOL_GROUPS
+      .filter((group) => group.currencies.length === 1)
+      .map((group) => ({
+        currency: group.currencies[0],
+        needsContext: group.needsContext,
+        lowerMarkers: group.lowerMarkers,
+        pattern: buildPriceMarkerPattern(group.markers)
+      }));
+  }
+
+  function buildPriceMarkerPattern(markers) {
+    const markerPattern = [...new Set(markers)]
+      .map(buildMarkerPattern)
+      .sort((a, b) => b.length - a.length)
+      .join("|");
+    return new RegExp(
+      `(?:${markerPattern})[\\s\\u00a0\\u202f]*[0-9０-９]|[0-9０-９][\\s\\u00a0\\u202f]*(?:${markerPattern})`,
+      "giu"
+    );
   }
 
   function addLocationSignals(add) {

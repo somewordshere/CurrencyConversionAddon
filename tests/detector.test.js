@@ -210,4 +210,77 @@ assert.equal(
   "numbers embedded in product model names must not be converted"
 );
 
+// Storefronts that price in symbols and never print an ISO code are the reason
+// page detection exists; these pin down that a marker only resolves a currency
+// when the rest of the page agrees it should.
+function detectorForPage({ lang, hostname, bodyText }) {
+  const pageContext = vm.createContext({
+    console,
+    URL,
+    document: {
+      body: { innerText: bodyText },
+      documentElement: { innerHTML: "", lang },
+      querySelectorAll: () => [],
+      querySelector: () => null
+    },
+    window: { location: { hostname, href: `https://${hostname}/` } }
+  });
+  for (const file of [
+    "src/shared/currencies.js",
+    "src/content/number-parser.js",
+    "src/content/detector.js"
+  ]) {
+    vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), pageContext, { filename: file });
+  }
+  return pageContext.CurrencyDetector;
+}
+
+const turkishStorefront = detectorForPage({
+  lang: "tr",
+  hostname: "www.trendyol.com",
+  bodyText: "Sepetim 249,90 TL Elbise 1.299,90 TL Ayakkabı 899,00 TL Indirim 79,90 TL"
+});
+const turkishDetection = turkishStorefront.getPageCurrencyDetection();
+assert.equal(turkishDetection.currency, "TRY");
+assert.notEqual(
+  turkishDetection.confidence,
+  "low",
+  "lira prices written as TL must identify a Turkish storefront"
+);
+assert.equal(
+  turkishStorefront.findCurrencyMatches("1.299,90 TL")
+    .map((match) => `${match.currency}:${match.amount}`)
+    .join(),
+  "TRY:1299.9",
+  "Turkish pages price in TL, not in the lira sign"
+);
+
+const germanRecipe = detectorForPage({
+  lang: "de-DE",
+  hostname: "www.chefkoch.de",
+  bodyText: "Zutaten: 2 TL Zucker, 1 TL Salz, 3 TL Backpulver, 250 g Mehl, Preis 4,99 €"
+});
+assert.notEqual(
+  germanRecipe.getPageCurrencyDetection().currency,
+  "TRY",
+  "teaspoons in a German recipe must not read as a Turkish storefront"
+);
+assert.equal(
+  germanRecipe.findCurrencyMatches("2 TL").length,
+  0,
+  "TL must stay inert on pages that are not priced in lira"
+);
+
+const manatMarketplace = detectorForPage({
+  lang: "az",
+  hostname: "tap.az",
+  bodyText: "Qiymət, AZN 2 600 ₼ 175 000 ₼ 65 ₼ 350 ₼ 220 ₼"
+});
+assert.equal(manatMarketplace.getPageCurrencyDetection().currency, "AZN");
+assert.equal(
+  manatMarketplace.getPageCurrencyDetection().confidence,
+  "high",
+  "a page full of manat prices must be identified confidently"
+);
+
 console.log("detector tests passed");

@@ -57,6 +57,10 @@
 
   function restoreConvertedWrapper(wrapper) {
     if (wrapper.dataset?.ccpAppended === "true") {
+      // "Converted only" parks the site's own price nodes inside the badge; they
+      // have to go back where they came from before the badge disappears.
+      const captured = wrapper.querySelector?.(":scope > .ccp-original");
+      if (captured) wrapper.before(...captured.childNodes);
       wrapper.remove();
       return;
     }

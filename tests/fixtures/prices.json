@@ -10,5 +10,7 @@
     "pageCurrency": "KWD",
     "currency": "KWD",
     "amount": 1.234
-  }
+  },
+  { "text": "1.299,90 TL", "pageCurrency": "TRY", "currency": "TRY", "amount": 1299.9 },
+  { "text": "66 000 ₼", "pageCurrency": "AZN", "currency": "AZN", "amount": 66000 }
 ]
