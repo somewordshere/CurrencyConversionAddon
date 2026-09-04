@@ -13,5 +13,6 @@ importScripts(
   "site-preferences.js",
   "settings-service.js",
   "page-actions.js",
+  "onboarding.js",
   "main.js"
 );

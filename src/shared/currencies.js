@@ -60,6 +60,34 @@
     "r", "fr", "fr.", "kr", "dh", "sr", "lei", "ft", "rp", "rm", "rs",
     "ksh", "qr", "kd", "bd", "ro", "jd", "tl"
   ]);
+  // Regions that use the euro but are not the locale recorded against EUR above.
+  const EURO_REGIONS = [
+    "AD", "AT", "BE", "BG", "CY", "DE", "EE", "ES", "FI", "FR", "GR", "HR", "IE",
+    "IT", "LT", "LU", "LV", "MC", "ME", "MT", "NL", "PT", "SI", "SK", "SM", "VA", "XK"
+  ];
+
+  // "Which currency does someone in this region think in?" Built from the locale
+  // already recorded against each currency, so the two cannot drift apart.
+  const REGION_CURRENCY = new Map();
+  for (const [code, meta] of Object.entries(CURRENCY_META)) {
+    const region = regionOf(meta.locale);
+    if (region && !REGION_CURRENCY.has(region)) REGION_CURRENCY.set(region, code);
+  }
+  for (const region of EURO_REGIONS) REGION_CURRENCY.set(region, "EUR");
+
+  function regionOf(locale) {
+    if (typeof locale !== "string") return null;
+    const match = /^[A-Za-z]{2,3}[-_]([A-Za-z]{2})(?:[-_]|$)/.exec(locale.trim());
+    return match ? match[1].toUpperCase() : null;
+  }
+
+  // Best guess at a new user's home currency, so a fresh install does not
+  // silently convert every price into a currency they do not think in.
+  // Returns null when the locale says nothing useful; the caller keeps its default.
+  function currencyForLocale(locale) {
+    return REGION_CURRENCY.get(regionOf(locale)) || null;
+  }
+
   const currencyFormatters = new Map();
 
   function formatCurrencyAmount(amount, currency) {
@@ -81,6 +109,7 @@
     CURRENCY_META,
     CURRENCY_CODES,
     CONTEXT_REQUIRED_SYMBOLS,
+    currencyForLocale,
     formatCurrencyAmount
   });
 })(globalThis);

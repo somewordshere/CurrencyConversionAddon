@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Welcome to Twinprice</title>
+    <link rel="stylesheet" href="onboarding.css">
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M14.5 9H10.8a1.8 1.8 0 0 0 0 3.6h2.4a1.8 1.8 0 0 1 0 3.6H9.5"/>
+            <path d="M12 7v10"/>
+          </svg>
+          <span class="brand-name">Twinprice</span>
+        </div>
+        <h1>Two steps and you are done.</h1>
+        <p class="lede">Twinprice reads prices on shopping pages inside your browser and shows what they cost in your own money, beside the original.</p>
+      </header>
+
+      <section class="card" aria-labelledby="currencyHeading">
+        <div class="step-number" aria-hidden="true">1</div>
+        <div class="step-body">
+          <h2 id="currencyHeading">Which currency do you think in?</h2>
+          <p class="help">Prices will be converted into this one. You can change it any time from the toolbar popup.</p>
+          <div class="field">
+            <label class="label" for="homeCurrency">Your currency</label>
+            <select id="homeCurrency" class="select" disabled>
+              <option>Loading currencies…</option>
+            </select>
+            <p id="currencyNote" class="note" role="status"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="tabsHeading">
+        <div class="step-number" aria-hidden="true">2</div>
+        <div class="step-body">
+          <h2 id="tabsHeading">Switch on the tabs you already have open</h2>
+          <p class="help">Twinprice loads itself into pages as they open, so tabs you opened before installing it are not being watched yet. This turns them on without a reload.</p>
+          <button id="activateTabs" type="button" class="button">Activate my open tabs</button>
+          <p id="tabsNote" class="note" role="status"></p>
+        </div>
+      </section>
+
+      <section class="card card-quiet" aria-labelledby="accessHeading">
+        <div class="step-body">
+          <h2 id="accessHeading">Why the install asked for access to every site</h2>
+          <p class="help">A price can be on any shop, so the detector has to be allowed to look at any page. That permission is what lets Twinprice notice a price without you clicking anything first.</p>
+          <ul class="facts">
+            <li><strong>Reading is all it does.</strong> Detection, conversion and drawing happen on your machine.</li>
+            <li><strong>No browsing data is sent.</strong> Not page text, not prices, not the addresses you visit.</li>
+            <li><strong>One thing leaves your browser:</strong> a three-letter code such as <code>USD</code>, to fetch that day's reference rate.</li>
+            <li><strong>No advertising, analytics or tracking.</strong> The source is public under the MIT licence.</li>
+          </ul>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <p id="doneNote" class="note"></p>
+        <button id="finish" type="button" class="button button-primary">Start shopping</button>
+      </footer>
+    </main>
+    <script src="../shared/browser-api.js"></script>
+    <script src="../shared/messages.js"></script>
+    <script src="onboarding.js"></script>
+  </body>
+</html>

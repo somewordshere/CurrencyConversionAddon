@@ -200,6 +200,10 @@ const runtimeFiles = [
   "src/shared/content-script-resources.js",
   "src/background/http.js",
   "src/background/catalog-snapshot.js",
+  "src/background/onboarding.js",
+  "src/onboarding/onboarding.html",
+  "src/onboarding/onboarding.css",
+  "src/onboarding/onboarding.js",
   "src/icons/icon16.png",
   "src/icons/icon32.png",
   "src/icons/icon48.png",
@@ -210,7 +214,7 @@ for (const relativePath of runtimeFiles) {
   assert.ok(fs.existsSync(path.join(root, relativePath)), `missing runtime file: ${relativePath}`);
 }
 
-for (const directory of ["background", "content", "popup", "shared"]) {
+for (const directory of ["background", "content", "onboarding", "popup", "shared"]) {
   for (const name of fs.readdirSync(path.join(root, "src", directory))) {
     if (!name.endsWith(".js")) continue;
     const file = path.join(root, "src", directory, name);
@@ -224,6 +228,17 @@ for (const file of walkJavaScript(path.join(root, "src"))) {
   if (file.endsWith("browser-api.js")) continue;
   assert.doesNotMatch(contents, /\b(?:chrome|browser)\./, `use ExtensionAPI in ${file}`);
 }
+
+assert.equal(
+  baseManifest.options_ui?.page,
+  "onboarding/onboarding.html",
+  "the onboarding page must stay reachable from the browser's own extension list"
+);
+assert.ok(
+  fs.readFileSync(path.join(root, "src/background/onboarding.js"), "utf8")
+    .includes('details?.reason !== "install"'),
+  "onboarding must open only on a first install, never on an update or restart"
+);
 
 console.log("project checks passed");
 

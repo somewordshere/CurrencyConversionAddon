@@ -55,6 +55,10 @@
       "128": "icons/icon128.png"
     }
   },
+  "options_ui": {
+    "page": "onboarding/onboarding.html",
+    "open_in_tab": true
+  },
   "commands": {
     "convert-page": {
       "suggested_key": {

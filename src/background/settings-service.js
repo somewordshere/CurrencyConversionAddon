@@ -6,15 +6,25 @@
     currencyCatalog,
     settingsSchema,
     sitePreferences,
-    catalogSnapshot = global.CurrencyCatalogSnapshot
+    catalogSnapshot = global.CurrencyCatalogSnapshot,
+    resolveLocale = () => global.navigator?.language
   }) {
     async function initializeDefaults() {
       const catalog = await resolveService(catalogService, "catalog").getCurrencies();
       const supportedCodes = catalog.currencies.map((currency) => currency.code);
       const stored = await api.storage.sync.get(settingsSchema.KEYS);
-      await api.storage.sync.set(settingsSchema.sanitize(stored, supportedCodes));
+      await api.storage.sync.set(settingsSchema.sanitize(seedHomeCurrency(stored), supportedCodes));
       await api.storage.local.remove("favoriteCurrencies");
       return supportedCodes;
+    }
+
+    // A fresh install has no stored target currency. Guessing from the browser's own
+    // region beats defaulting every user on earth to euros. sanitize() drops the
+    // guess if the provider does not quote it, so a bad guess costs nothing.
+    function seedHomeCurrency(stored) {
+      if (typeof stored?.toCurrency === "string") return stored;
+      const home = currencyCatalog.currencyForLocale(resolveLocale());
+      return home ? { ...stored, toCurrency: home } : stored;
     }
 
     async function getSettings(originValue) {

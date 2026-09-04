@@ -26,7 +26,7 @@ for (const browser of browsers) {
   rmSync(destination, { recursive: true, force: true });
   mkdirSync(destination, { recursive: true });
 
-  for (const directory of ["background", "content", "icons", "popup", "shared"]) {
+  for (const directory of ["background", "content", "icons", "onboarding", "popup", "shared"]) {
     cpSync(join(root, "src", directory), join(destination, directory), { recursive: true });
   }
   if (browser === "firefox") {

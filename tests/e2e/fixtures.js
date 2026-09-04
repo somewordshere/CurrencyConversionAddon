@@ -13,6 +13,15 @@ const test = base.extend({
         `--load-extension=${extensionPath}`
       ]
     });
+    // Every test starts from a fresh profile, so the extension opens its welcome
+    // tab on install in all of them. Close it, as a real user would, so it cannot
+    // answer messages a test is counting or be mistaken for the page under test.
+    context.on("page", (page) => {
+      if (page.url().includes("onboarding/onboarding.html")) {
+        page.close().catch(() => {});
+      }
+    });
+
     await use(context);
     await context.close();
   },

@@ -1281,11 +1281,13 @@ test("rapid popup changes remain consistent across close and validation races", 
     });
     globalThis.__ccpObservedPopupUpdates = [];
     globalThis.__ccpObservedPopupSettingsReads = 0;
-    globalThis.__ccpPopupUpdateObserver = (message) => {
+    globalThis.__ccpPopupUpdateObserver = (message, sender) => {
       if (message?.type === "UPDATE_SETTINGS") {
         globalThis.__ccpObservedPopupUpdates.push(structuredClone(message.payload));
       }
-      if (message?.type === "GET_SETTINGS") {
+      // Scoped to the popup: the welcome page reads settings too, and counting
+      // its read here made this assertion depend on onboarding timing.
+      if (message?.type === "GET_SETTINGS" && sender?.url?.includes("popup/popup.html")) {
         globalThis.__ccpObservedPopupSettingsReads += 1;
       }
     };

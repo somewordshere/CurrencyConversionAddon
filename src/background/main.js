@@ -4,12 +4,14 @@
   const settings = global.CurrencySettingsService;
   const sites = global.CurrencySitePreferences;
   const pageActions = global.CurrencyPageActions;
+  const onboarding = global.CurrencyOnboardingService;
 
-  api.runtime.onInstalled.addListener(async () => {
+  api.runtime.onInstalled.addListener(async (details) => {
     try {
       const supportedCodes = await settings.initializeDefaults();
       await pageActions.initializeContextMenu();
       await sites.reconcile(supportedCodes);
+      await onboarding.openOnInstall(details);
     } catch (error) {
       console.error("Twinprice initialization failed.", error);
     }
@@ -60,6 +62,8 @@
         return settings.rememberSite(message.origin || sender?.url);
       case messages.FORGET_SITE:
         return sites.forget(message.origin || sender?.url);
+      case messages.ACTIVATE_OPEN_TABS:
+        return onboarding.activateOpenTabs();
       case messages.SET_BADGE:
         return pageActions.setBadge(sender?.tab?.id, message.count);
       default:

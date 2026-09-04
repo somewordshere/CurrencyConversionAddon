@@ -16,6 +16,7 @@
       "background/site-preferences.js",
       "background/settings-service.js",
       "background/page-actions.js",
+      "background/onboarding.js",
       "background/main.js"
     ]
   },
