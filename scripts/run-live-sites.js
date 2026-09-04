@@ -75,7 +75,7 @@ async function main() {
   const results = [...existingResults];
   const rerun = args.has("--rerun");
 
-  console.log(`Currency Converter Pro live-site run: ${selectedSites.length} selected, ${completedKeys.size} already completed.`);
+  console.log(`Twinprice live-site run: ${selectedSites.length} selected, ${completedKeys.size} already completed.`);
   const context = await chromium.launchPersistentContext(path.join(outputDirectory, "profile"), {
     channel: "chromium",
     headless: !args.has("--headed"),
@@ -446,7 +446,7 @@ function saveResults(results, totalSites) {
 function buildMarkdownReport(payload) {
   const counts = countClassifications(payload.results);
   const lines = [
-    "# Currency Converter Pro live-site report",
+    "# Twinprice live-site report",
     "",
     `Generated: ${payload.generatedAt}`,
     "",

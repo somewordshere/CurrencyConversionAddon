@@ -1,8 +1,8 @@
-# Currency Converter Pro Privacy Policy
+# Twinprice Privacy Policy
 
 Effective date: August 11, 2026 (version 1.9.2)
 
-Currency Converter Pro is a Chrome and Firefox extension that identifies prices on webpages and converts them into a currency selected by the user.
+Twinprice is a Chrome and Firefox extension that identifies prices on webpages and converts them into a currency selected by the user.
 
 ## Information processed by the extension
 
@@ -92,7 +92,7 @@ The extension uses the following browser permissions:
 ## Limited Use
 
 Information received through browser extension APIs is used only to provide
-Currency Converter Pro's disclosed single purpose and is handled in accordance
+Twinprice's disclosed single purpose and is handled in accordance
 with the Chrome Web Store User Data Policy, including the Limited Use
 requirements. It is not used for advertising, profiling, credit decisions, sale,
 or unrelated purposes, and humans are not allowed to read webpage data.
@@ -129,4 +129,4 @@ If the extension's data practices change, this policy will be updated before the
 
 ## Contact
 
-For privacy questions, contact the developer using the support contact shown on the Currency Converter Pro store listing or GitHub repository.
+For privacy questions, contact the developer using the support contact shown on the Twinprice store listing or GitHub repository.

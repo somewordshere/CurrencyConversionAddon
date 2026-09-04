@@ -22,7 +22,7 @@
         await api.tabs.sendMessage(tab.id, { type: messages.CONVERT_SELECTION });
       } catch (error) {
         console.info(
-          "Currency Converter Pro could not access this page. Reload the page and try again.",
+          "Twinprice could not access this page. Reload the page and try again.",
           error
         );
       }

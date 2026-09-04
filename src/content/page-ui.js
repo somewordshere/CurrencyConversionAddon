@@ -60,7 +60,7 @@
     const title = document.createElement("strong");
     title.id = "ccp-page-prompt-title";
     title.className = "ccp-page-prompt-title";
-    title.textContent = "Currency Converter Pro";
+    title.textContent = "Twinprice";
     const close = document.createElement("button");
     close.type = "button";
     close.className = "ccp-page-prompt-close";

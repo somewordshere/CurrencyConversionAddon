@@ -49,7 +49,7 @@ function buildArchive(browser, sourceDirectory, version) {
 
   const artifactsDirectory = join(root, "release", version);
   mkdirSync(artifactsDirectory, { recursive: true });
-  const filename = `currency-converter-pro-${version}-${browser}.zip`;
+  const filename = `twinprice-${version}-${browser}.zip`;
   const result = spawnSync(process.execPath, [
     webExtCli,
     "build",

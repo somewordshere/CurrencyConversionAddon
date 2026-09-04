@@ -1,6 +1,16 @@
 # Changelog
 
-All notable changes to Currency Converter Pro are documented here. Dates reflect the release preparation date for each version.
+All notable changes to Twinprice are documented here. Dates reflect the release preparation date for each version.
+
+## 2.1.0 - 2026-09-04
+
+Renamed from Currency Converter Pro to Twinprice. No runtime behaviour changed.
+
+### Changed
+
+- The extension is now called Twinprice. The old name was shared with two other Chrome Web Store listings, one of them an established extension with roughly 40,000 users and a 4.7-star rating, so searching the store for the exact name returned that listing first and this one second. The store title carries the descriptive tail `Currency Converter for Every Price on a Page` so the listing still matches what shoppers search for, while `short_name` keeps the browser's own extension list reading simply `Twinprice`.
+- Release archives are now named `twinprice-<version>-<browser>.zip`. Archives published before this release keep the names they shipped under.
+- The Firefox add-on ID is deliberately unchanged. It is the identity Mozilla keys the listing on, so changing it would orphan the existing add-on rather than rename it. The Chrome item ID is fixed by the store and is likewise unaffected, so installed copies update to the new name in place.
 
 ## 2.0.3 - 2026-08-28
 

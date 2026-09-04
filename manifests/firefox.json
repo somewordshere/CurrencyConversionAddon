@@ -1,4 +1,5 @@
 {
+  "name": "Twinprice - Currency Converter",
   "background": {
     "scripts": [
       "shared/browser-api.js",

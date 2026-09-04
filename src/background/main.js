@@ -11,7 +11,7 @@
       await pageActions.initializeContextMenu();
       await sites.reconcile(supportedCodes);
     } catch (error) {
-      console.error("Currency Converter Pro initialization failed.", error);
+      console.error("Twinprice initialization failed.", error);
     }
   });
 

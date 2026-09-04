@@ -17,7 +17,7 @@ const { createSeededExtensionState } = require("../helpers/extension-state");
 const ROOT = path.resolve(__dirname, "../..");
 const FIREFOX_DIST = path.join(ROOT, "dist", "firefox");
 const ADDON_ID = "currency-converter-pro@somewordshere";
-const ADDON_NAME = "Currency Converter Pro";
+const ADDON_NAME = "Twinprice";
 const SHOP_HTML = fs.readFileSync(path.join(ROOT, "tests", "fixtures", "shop.html"), "utf8");
 const FIREFOX_TIMEOUT_MS = 30_000;
 
@@ -130,7 +130,7 @@ test("Firefox page access and popup handlers convert and undo a real webpage", {
 });
 
 function buildTemporaryArchive(temporaryDirectory) {
-  const filename = "currency-converter-pro-firefox-runtime.zip";
+  const filename = "twinprice-firefox-runtime.zip";
   const webExtCli = path.join(ROOT, "node_modules", "web-ext", "bin", "web-ext.js");
   const result = spawnSync(process.execPath, [
     webExtCli,

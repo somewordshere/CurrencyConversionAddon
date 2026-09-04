@@ -89,7 +89,7 @@ const settingsController = CurrencyPopupSettingsController.create({
   onSaved: finalizeSavedSettings,
   reportError: (phase, error) => {
     const action = phase === "persist" ? "confirm the settings update" : "reload the current settings";
-    console.error(`Currency Converter Pro could not ${action}.`, error);
+    console.error(`Twinprice could not ${action}.`, error);
   },
   describeError: errorMessage
 });
@@ -708,7 +708,7 @@ function handleInitializationFailure(error) {
   setRateHeroMessage("The rate service could not be reached.", "offline");
   setPopupInteractivity(false);
   setStatus(
-    `Currency Converter Pro could not start. ${errorMessage(error)} Close and reopen the popup to try again.`,
+    `Twinprice could not start. ${errorMessage(error)} Close and reopen the popup to try again.`,
     "error"
   );
 }
@@ -1300,7 +1300,7 @@ async function sendToActivePage(type, payload = {}) {
       error: "The page did not respond. Reload it once and try again."
     };
   } catch (error) {
-    console.error("Currency Converter Pro could not reach the active page.", error);
+    console.error("Twinprice could not reach the active page.", error);
     return { ok: false, error: CurrencyPageAccess.describeFailure(activeTab, error) };
   }
 }

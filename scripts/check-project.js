@@ -31,7 +31,24 @@ const chromeWorker = fs.readFileSync(path.join(root, "src/background/chrome-work
 
 assert.equal(baseManifest.manifest_version, 3);
 assert.equal(baseManifest.version, packageJson.version, "manifest and package versions must match");
-assert.ok(baseManifest.description.length <= 132, "manifest description must not exceed 132 characters");
+assert.ok(
+  baseManifest.description.length <= 132,
+  "manifest description must not exceed 132 characters"
+);
+// Chrome allows 75 characters in manifest name; AMO rejects anything over 45,
+// so the Firefox override carries a shorter title than the Chrome listing.
+assert.ok(
+  { ...baseManifest, ...chromeManifest }.name.length <= 75,
+  "the composed Chrome manifest name must not exceed 75 characters"
+);
+assert.ok(
+  { ...baseManifest, ...firefoxManifest }.name.length <= 45,
+  "the composed Firefox manifest name must not exceed 45 characters, or AMO rejects the upload"
+);
+assert.ok(
+  !Object.hasOwn(baseManifest, "short_name") || baseManifest.short_name.length <= 12,
+  "manifest short_name must not exceed 12 characters"
+);
 assert.equal(packageLock.version, packageJson.version, "lockfile and package versions must match");
 assert.equal(nodeVersion, "22", ".nvmrc must match the Node.js version used by CI");
 assert.equal(
@@ -44,8 +61,8 @@ assert.ok(
   "README current version must match the package"
 );
 assert.ok(
-  readme.includes(`release/${packageJson.version}/currency-converter-pro-${packageJson.version}-chrome.zip`) &&
-    readme.includes(`release/${packageJson.version}/currency-converter-pro-${packageJson.version}-firefox.zip`),
+  readme.includes(`release/${packageJson.version}/twinprice-${packageJson.version}-chrome.zip`) &&
+    readme.includes(`release/${packageJson.version}/twinprice-${packageJson.version}-firefox.zip`),
   "README release links must match the package version"
 );
 assert.ok(

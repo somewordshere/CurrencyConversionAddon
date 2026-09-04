@@ -109,7 +109,7 @@ async function openPopupForPage(context, extensionId, activePage) {
   const popup = await context.newPage();
   await activePage.bringToFront();
   await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);
-  await expect(popup.getByRole("heading", { name: "Currency Converter Pro" })).toBeVisible();
+  await expect(popup.getByRole("heading", { name: "Twinprice" })).toBeVisible();
   return popup;
 }
 
