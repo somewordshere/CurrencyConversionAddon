@@ -22,6 +22,21 @@ one out gives you a neighbouring version's source; the archive under
 The remaining thirteen tags each point at a commit whose `package.json` declares
 exactly that version.
 
+## 2.1.1 - 2026-09-05
+
+Everything here is a promise the project was making and not keeping.
+
+### Fixed
+
+- The privacy policy told users to reach the developer "using the support contact shown on the store listing", and no such contact existed anywhere: a search for an email address across every tracked file returned nothing. It now points at the repository's issue tracker, which is open and answers, and warns that issues are public.
+- The policy was still stamped version 1.9.2, five releases behind. `check-project.js` now asserts it records the shipping version, because it was the one versioned document nothing validated and it had silently drifted.
+- The Firefox manifest declared `Twinprice - Currency Converter` while the live AMO listing reads `Twinprice - Currency Converter for Every Page`. The manifest now matches what users actually see, at exactly the 45 characters AMO allows.
+
+### Added
+
+- A support link on the onboarding page. The extension previously contained no outbound link of any kind, so a user who hit a mispriced page had nowhere to report it and the author had no signal that anything was wrong.
+- A CI status badge in the README. Every push runs the unit suite, a Chromium Playwright suite, a real Firefox runtime test and `web-ext lint`, and none of that was visible to anyone reading the repository.
+
 ## 2.1.0 - 2026-09-04
 
 Renamed from Currency Converter Pro to Twinprice. No runtime behaviour changed.

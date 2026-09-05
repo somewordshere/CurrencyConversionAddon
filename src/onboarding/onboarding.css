@@ -175,7 +175,10 @@ body {
   gap: 16px;
   margin-top: 24px;
 }
+.footer-text { display: flex; flex-direction: column; gap: 4px; }
 .footer .note { margin: 0; }
+.link { color: var(--primary-bg); }
+.link:hover { color: var(--primary-hover); }
 
 @media (max-width: 560px) {
   .hero h1 { font-size: 25px; }

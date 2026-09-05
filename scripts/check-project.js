@@ -240,6 +240,12 @@ assert.ok(
   "onboarding must open only on a first install, never on an update or restart"
 );
 
+assert.ok(
+  fs.readFileSync(path.join(root, "privacy-policy.md"), "utf8")
+    .includes(`(version ${packageJson.version})`),
+  "privacy-policy.md must record the version it describes, or it silently goes stale"
+);
+
 console.log("project checks passed");
 
 function readJson(relativePath) {

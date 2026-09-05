@@ -1,5 +1,5 @@
 {
-  "name": "Twinprice - Currency Converter",
+  "name": "Twinprice - Currency Converter for Every Page",
   "background": {
     "scripts": [
       "shared/browser-api.js",
