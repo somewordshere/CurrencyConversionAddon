@@ -2,6 +2,26 @@
 
 All notable changes to Twinprice are documented here. Dates reflect the release preparation date for each version.
 
+Twenty-one versions have shipped. Every one has a signed-off archive under
+`release/<version>/` and a `v<version>` tag, but the tags do not all mean the
+same thing, because the source history does not cover every release:
+
+- **1.4.0, 1.4.1, 1.4.2 and 1.5.0 predate the source.** The repository's first
+  two commits contain only `README.md` and `privacy-policy.md`; the first commit
+  carrying any code is already 1.5.1. These four shipped before the extension was
+  under version control, and their archives were added afterwards.
+- **1.7.0, 1.7.1, 1.7.3 and 1.9.0 were built from working trees that never
+  landed.** No commit in this repository declares any of those versions, and
+  their archives arrived attached to a later release commit.
+
+For those eight, `v<version>` marks the commit that carries the archive, not a
+commit whose source is that version — each tag's own message says so. Checking
+one out gives you a neighbouring version's source; the archive under
+`release/<version>/` is the authoritative record of what actually shipped.
+
+The remaining thirteen tags each point at a commit whose `package.json` declares
+exactly that version.
+
 ## 2.1.0 - 2026-09-04
 
 Renamed from Currency Converter Pro to Twinprice. No runtime behaviour changed.
@@ -208,6 +228,44 @@ on-page surfaces now share its visual language.
 - A transient `siteAccessResetPending` boolean retries an interrupted legacy cleanup at browser startup and is removed before the verified-reset notice is shown.
 - Removing site access now unregisters automatic conversion, revokes the exact-origin permission, and deletes the remembered origin and its source-currency override.
 - Returning an approved site to `AUTO` now persists automatic detection for that site instead of falling back to an unrelated global manual source.
+
+## 1.7.2 - 2026-07-24
+
+Reconstructed from `release/1.7.2/`. This version shipped but was never written
+up; the notes below are read from the archive rather than recalled.
+
+### Changed
+
+- Moved the on-page conversion prompt from the bottom of the viewport to the top, and the selection control from the top to the bottom, so the two no longer competed for the same corner.
+- Gave the converted value an entrance animation and the prompt a success pulse when a conversion lands.
+- Extended the `prefers-reduced-motion` block to cover both new animations as well as the prompt, so a reduced-motion setting still disables everything that moves.
+
+`content/styles.css` is the only file that differs from 1.7.1 apart from the version string.
+
+## 1.7.1 - 2026-07-24
+
+Reconstructed from `release/1.7.1/`. Released between 1.7.0 and 1.7.2; the exact
+date was not recorded, so the date above is the day its archive was committed.
+
+### Removed
+
+- Removed the **Show the one-click control on webpages** checkbox from the popup. The on-page prompt now follows the global enabled state alone, rather than a second switch that could silently suppress it. A per-prompt setting returned later as `showPagePrompt`.
+
+## 1.7.0 - 2026-07-24
+
+Reconstructed from `release/1.7.0/`. Released after 1.6.2 on 2026-07-21 and
+before 1.7.2; the exact date was not recorded, so the date above is the day its
+archive was committed.
+
+This is the first version to load the converter declaratively on every ordinary
+webpage, and the beginning of the permission round trip that 1.7.3 reversed and
+1.8.0 reinstated.
+
+### Changed
+
+- Replaced the optional `http://*/*` and `https://*/*` grants with required host permissions and a declarative `content_scripts` block, so the converter loaded on ordinary webpages without the user approving each site first.
+- Changed remembered websites from "grants access only to this site, you can revoke it anytime" into "automatically converts this website when you revisit it", following that permission change.
+- Reworded the popup's prompt toggle to **Show the one-click control on webpages**, and reworded the extension description around one-click control rather than per-site controls.
 
 ## 1.6.2 - 2026-07-21
 
