@@ -1,0 +1,14 @@
+{
+  "name": "twinprice",
+  "account_id": "3ff0f3d4cc189f35fc5d9ca14a9c6309",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "twinprice.com", "custom_domain": true }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
+}

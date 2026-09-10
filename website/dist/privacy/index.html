@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#245bea"><title>Privacy policy — twinprice.com</title><meta name="description" content="How Twinprice processes prices locally, stores settings, and requests exchange rates. Read the full extension privacy policy."><link rel="icon" href="../assets/twinprice-icon.png"><link rel="stylesheet" href="../styles.css"></head>
+<body><a class="skip-link" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="../" aria-label="twinprice.com home"><img src="../assets/twinprice-icon.png" width="32" height="32" alt=""><span>twinprice<span class="brand-period">.</span>com</span></a><nav aria-label="Main navigation"><a href="../#how-it-works">How it works</a><a href="./" aria-current="page">Privacy</a><a href="../#faq">FAQ</a></nav><a class="button button-small" href="../#install">Get Twinprice <span aria-hidden="true">↗</span></a></header>
+<main class="wrap policy-main" id="main"><p class="eyebrow">YOUR BROWSING STAYS YOURS</p><h1>Privacy, in plain sight.</h1><div class="policy-notice"><p>The full Twinprice extension policy appears below, with its version and effective date. The browser stores may offer different release versions; consult the policy linked from your installed version's store listing for the current release.</p></div><article class="policy-content" aria-label="Extension privacy policy"><p>Effective date: September 10, 2026 (version 2.1.3)</p>
+<p>Twinprice is a Chrome and Firefox extension that identifies prices on webpages and converts them into a currency selected by the user.</p>
+<h2>Information processed by the extension</h2>
+<p>To provide currency detection and conversion, the extension processes the following information locally in the user's browser:</p>
+<ul><li>Visible webpage text that may contain prices or currency markers</li>
+<li>Structured product and price metadata contained in the webpage</li>
+<li>The webpage's domain and declared language, used as weak currency-detection signals</li>
+<li>Text deliberately highlighted by the user for individual conversion</li></ul>
+<p>When the converter is enabled, a lightweight detector runs on ordinary HTTP and HTTPS webpages as they open. It checks locally for supported prices and shows the on-page conversion prompt only after a likely price is found. A website that the user marks for automatic conversion may also have its supported prices converted when it is visited. Webpage information is processed temporarily on the user's device. Raw page contents and highlighted text are not collected by the developer, retained by the extension, or transmitted to the developer or exchange-rate provider. A detected ISO source-currency code may be included in the rate request described below.</p>
+<p>The <strong>Convert custom amount</strong> disclosure processes the entered amount locally and does not need to inspect the current webpage. If the source remains <code>AUTO</code> and no page conversion has identified it, the popup requires the user to choose an explicit source currency. The amount itself is not included in the rate request.</p>
+<h2>Settings and locally stored information</h2>
+<p>The extension stores:</p>
+<ul><li>Whether the extension is enabled</li>
+<li>The selected source-currency mode</li>
+<li>The selected target currency</li>
+<li>Price-display, converted-price appearance, and page-prompt preferences</li>
+<li>Recently selected currency codes</li>
+<li>A cache of exchange rates, including the rate date and fetch time</li>
+<li>The origins of websites the user chooses for automatic conversion</li>
+<li>A source-currency mode for an automatic-conversion website, including a manual currency or <code>AUTO</code></li></ul>
+<p>Core extension settings use the browser's extension sync storage and may be synchronized by Google or Mozilla according to the user's browser settings and the browser provider's privacy practices. Recent currencies, remembered website origins, their source-currency modes, and exchange-rate data are stored locally in the browser.</p>
+<p>The extension does not store webpage contents, highlighted text, or general browsing history. It stores only the website origins the user deliberately marks for automatic conversion and any source-currency mode associated with those origins, until the user removes that access. Selecting <code>AUTO</code> replaces a manual website source with that website's automatic-detection mode.</p>
+<h2>Exchange-rate service</h2>
+<p>The extension requests reference exchange rates from the public Frankfurter API at:</p>
+<p><a href="https://api.frankfurter.dev/">api.frankfurter.dev</a></p>
+<p>Only ISO currency codes for the source and supported quote currencies are included in these requests. Webpage contents, highlighted text, price values, URLs, and browsing history are not sent to Frankfurter.</p>
+<p>Requests use HTTPS. As with normal internet requests, Frankfurter and its infrastructure provider may receive technical request information such as the user's IP address and browser network metadata. Their handling of that information is governed by their own practices.</p>
+<h2>Data sharing and sale</h2>
+<p>The developer does not:</p>
+<ul><li>Collect or sell personal information</li>
+<li>Collect browsing history</li>
+<li>Use analytics or advertising trackers</li>
+<li>Use data for personalized advertising</li>
+<li>Share webpage content, highlighted text, or visited URLs with third parties</li>
+<li>Allow humans to read user webpage data</li></ul>
+<h2>Permissions</h2>
+<p>The extension uses the following browser permissions:</p>
+<ul><li><code>storage</code>: saves extension settings and caches exchange rates</li>
+<li><code>contextMenus</code>: provides the “Convert selected currency” right-click action</li>
+<li>Access to ordinary HTTP and HTTPS webpages: loads the local price detector when   pages open so the extension can find supported prices and offer conversion   without requiring a toolbar click. Page contents and URLs are not transmitted</li>
+<li><code>activeTab</code> and <code>scripting</code>: provides a user-triggered fallback on supported   pages where the normal detector was not loaded, including manually allowed local files</li>
+<li>Access to <code>api.frankfurter.dev</code>: retrieves exchange rates</li></ul>
+<h2>Limited Use</h2>
+<p>Information received through browser extension APIs is used only to provide Twinprice's disclosed single purpose and is handled in accordance with the Chrome Web Store User Data Policy, including the Limited Use requirements. It is not used for advertising, profiling, credit decisions, sale, or unrelated purposes, and humans are not allowed to read webpage data.</p>
+<h2>Data retention and deletion</h2>
+<p>Webpage information and selected text are processed only while the relevant webpage is open and are not retained.</p>
+<p>Saved settings and automatic-conversion website origins remain until the user changes them, clears extension data, or uninstalls the extension. Turning off the global <strong>Enable converter</strong> switch stops price scanning, prompts, and automatic conversion without deleting a saved automatic-conversion origin or its source-currency mode.</p>
+<p>Turning off <strong>Convert this site automatically</strong> deletes the remembered origin and its source-currency mode. Ordinary local price detection and the on-page prompt remain available while the global converter is enabled. Selecting <code>AUTO</code> for an automatic-conversion website stores automatic detection as that website's source mode. Cached exchange rates are refreshed regularly and remain available as an offline fallback until local extension data is cleared or the extension is uninstalled.</p>
+<h2>Security</h2>
+<p>All external exchange-rate requests use HTTPS. The extension does not execute remotely hosted code.</p>
+<h2>Children</h2>
+<p>The extension is not designed to collect personal information from children or any other users.</p>
+<h2>Changes to this policy</h2>
+<p>If the extension's data practices change, this policy will be updated before the changed version is published.</p>
+<h2>Contact</h2>
+<p>For privacy questions, open an issue at https://github.com/somewordshere/CurrencyConversionAddon/issues. Issues are public; do not include anything you would not want published.</p>
+<section class="policy-site"><h2>This website</h2><p>The Twinprice landing page does not add analytics, advertising trackers, cookies, or browser storage. Its interactive demonstration runs locally using fixed example rates and does not contact an exchange-rate service. Images and styles are served with the site.</p><p>The hosting service may process normal request details, including your IP address, to deliver and secure the website. Any access controls supplied by the hosting service operate separately from this site's own code. Following a store or GitHub link takes you to a service with its own privacy practices.</p></section></article></main>
+<footer class="site-footer wrap"><a class="brand" href="../"><span>twinprice<span class="brand-period">.</span>com</span></a><span>A familiar price, wherever you shop.</span><a href="./" aria-current="page">Privacy policy</a><a href="https://github.com/somewordshere/CurrencyConversionAddon/issues">Help / Report an issue</a><a href="https://github.com/somewordshere/CurrencyConversionAddon">Source code</a></footer></body></html>

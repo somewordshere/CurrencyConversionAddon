@@ -22,6 +22,12 @@ one out gives you a neighbouring version's source; the archive under
 The remaining fourteen tags each point at a commit whose `package.json` declares
 exactly that version.
 
+## 2.1.3 - 2026-09-10
+
+- Moved the public website, popup link, welcome-page help, and extension homepage to https://twinprice.com/.
+- Changed the popup heading and title to twinprice.com.
+- Published the website on its custom domain and disabled the previous workers.dev address.
+
 ## 2.1.2 - 2026-09-10
 
 - Added the Twinprice website to the toolbar popup and extension homepage metadata.

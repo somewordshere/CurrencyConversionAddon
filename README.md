@@ -2,13 +2,13 @@
 
 Twinprice is a Chrome and Firefox extension that converts prices on shopping pages into a currency you understand.
 
-**[Twinprice website](https://twinprice.kiritimo.workers.dev/)** — currently a private preview; sign-in is required. The website brings together installation links, help, privacy information, and source code. The add-on links to the website for product information and support.
+**[twinprice.com](https://twinprice.com/)** brings together installation links, help, privacy information, and source code. The add-on links to the website for product information and support.
 
 Detection, conversion, and rendering all happen inside your browser. The only thing that ever leaves it is an ISO currency code such as `USD` or `EUR` — never page content, prices, or the sites you visit.
 
-**Current version:** 2.1.2 · **Platforms:** Chrome and Firefox Manifest V3 · **Firefox:** 140+ · Android 142+ · **License:** MIT
+**Current version:** 2.1.3 · **Platforms:** Chrome and Firefox Manifest V3 · **Firefox:** 140+ · Android 142+ · **License:** MIT
 
-[![Verify](https://github.com/somewordshere/CurrencyConversionAddon/actions/workflows/verify.yml/badge.svg)](https://github.com/somewordshere/CurrencyConversionAddon/actions/workflows/verify.yml) [![Chrome Web Store](https://img.shields.io/badge/Chrome-Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/twinprice/) [![Chrome build](https://img.shields.io/badge/Chrome-Build-4285F4?logo=googlechrome&logoColor=white)](release/2.1.2/twinprice-2.1.2-chrome.zip) [![Firefox build](https://img.shields.io/badge/Firefox-Build-FF7139?logo=firefoxbrowser&logoColor=white)](release/2.1.2/twinprice-2.1.2-firefox.zip)
+[![Verify](https://github.com/somewordshere/CurrencyConversionAddon/actions/workflows/verify.yml/badge.svg)](https://github.com/somewordshere/CurrencyConversionAddon/actions/workflows/verify.yml) [![Chrome Web Store](https://img.shields.io/badge/Chrome-Store-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) [![Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--ons-FF7139?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/twinprice/) [![Chrome build](https://img.shields.io/badge/Chrome-Build-4285F4?logo=googlechrome&logoColor=white)](release/2.1.3/twinprice-2.1.3-chrome.zip) [![Firefox build](https://img.shields.io/badge/Firefox-Build-FF7139?logo=firefoxbrowser&logoColor=white)](release/2.1.3/twinprice-2.1.3-firefox.zip)
 
 **[View the complete changelog →](CHANGELOG.md)**
 
@@ -51,7 +51,7 @@ Or select a single price to convert just that one:
 ## Installation
 
 - **Store installation:** Install Twinprice from the [Chrome Web Store](https://chromewebstore.google.com/detail/currency-converter-pro/mocmiipnkiobjgjkfehpcmlapgjaepfk) or [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/twinprice/).
-- **Manual installation:** Download the latest [Chrome build](release/2.1.2/twinprice-2.1.2-chrome.zip) or [Firefox build](release/2.1.2/twinprice-2.1.2-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
+- **Manual installation:** Download the latest [Chrome build](release/2.1.3/twinprice-2.1.3-chrome.zip) or [Firefox build](release/2.1.3/twinprice-2.1.3-firefox.zip), extract it, and load it through the browser's extension-development page. The Firefox build requires Mozilla signing for permanent installation.
 
 ## 🧭 How to use it
 
@@ -200,7 +200,7 @@ CI runs every one of these on each push. `npm run build:icons` and `npm run buil
 
 | Version | Highlights | Download |
 | --- | --- | --- |
-| 2.1.2 | Website and help links route through the Twinprice website; compact footer preserves the normal popup layout | [Chrome](release/2.1.2/twinprice-2.1.2-chrome.zip) · [Firefox](release/2.1.2/twinprice-2.1.2-firefox.zip) |
+| 2.1.3 | Website and help links route through the Twinprice website; compact footer preserves the normal popup layout | [Chrome](release/2.1.3/twinprice-2.1.3-chrome.zip) · [Firefox](release/2.1.3/twinprice-2.1.3-firefox.zip) |
 | 2.1.1 | Support link in the extension, a privacy policy that names a contact that exists, and the Firefox listing name the add-on actually uses | [Chrome](release/2.1.1/twinprice-2.1.1-chrome.zip) · [Firefox](release/2.1.1/twinprice-2.1.1-firefox.zip) |
 | 2.1.0 | Renamed to Twinprice, onboarding on first install, and a home currency taken from your browser region | [Chrome](release/2.1.0/twinprice-2.1.0-chrome.zip) · [Firefox](release/2.1.0/twinprice-2.1.0-firefox.zip) |
 | 2.0.3 | Turkish product pages with a single price now resolve, and a price whose symbol is nested deeper than its amount is no longer converted twice | [Chrome](release/2.0.3/currency-converter-pro-2.0.3-chrome.zip) · [Firefox](release/2.0.3/currency-converter-pro-2.0.3-firefox.zip) |

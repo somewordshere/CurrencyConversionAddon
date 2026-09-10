@@ -1,0 +1,8 @@
+!dist/
+!dist/**
+node_modules/
+.cache/
+*.log
+.wrangler/
+.dev.vars*
+.env*

@@ -1,0 +1,9 @@
+{
+  "name": "twinprice-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node serve.mjs",
+    "check": "node --check dist/demo.js && node --check dist/selection-demo.js && node --check serve.mjs"
+  }
+}
