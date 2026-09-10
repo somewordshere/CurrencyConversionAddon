@@ -2,7 +2,7 @@
 
 All notable changes to Twinprice are documented here. Dates reflect the release preparation date for each version.
 
-Twenty-one versions have shipped. Every one has a signed-off archive under
+Twenty-two versions have shipped. Every one has a signed-off archive under
 `release/<version>/` and a `v<version>` tag, but the tags do not all mean the
 same thing, because the source history does not cover every release:
 
@@ -19,8 +19,15 @@ commit whose source is that version — each tag's own message says so. Checking
 one out gives you a neighbouring version's source; the archive under
 `release/<version>/` is the authoritative record of what actually shipped.
 
-The remaining thirteen tags each point at a commit whose `package.json` declares
+The remaining fourteen tags each point at a commit whose `package.json` declares
 exactly that version.
+
+## 2.1.2 - 2026-09-10
+
+- Added the Twinprice website to the toolbar popup and extension homepage metadata.
+- Routed onboarding help through the website instead of linking directly to GitHub.
+- Kept the website link beside the current-page label so the default popup fits without an extra scrollbar.
+- The website remains a private preview requiring sign-in.
 
 ## 2.1.1 - 2026-09-05
 

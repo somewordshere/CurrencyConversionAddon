@@ -922,10 +922,16 @@ button:disabled, select:disabled, input:disabled { cursor: not-allowed; opacity:
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.foot-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.foot-meta .site-state { min-width: 0; }
 .website-link {
   display: inline-block;
-  margin-bottom: var(--sp-2);
-  padding-block: var(--sp-1);
+  flex: 0 0 auto;
   color: var(--text-primary);
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);

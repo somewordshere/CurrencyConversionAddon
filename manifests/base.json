@@ -3,7 +3,7 @@
   "name": "Twinprice - Currency Converter for Every Price on a Page",
   "short_name": "Twinprice",
   "homepage_url": "https://twinprice.kiritimo.workers.dev/",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "160+ currencies, converted beside the original price so you keep both. Local detection on shopping pages, and no browsing data sent.",
   "icons": {
     "16": "icons/icon16.png",
