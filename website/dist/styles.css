@@ -996,7 +996,8 @@ h1 {
   letter-spacing: -.5px;
 }
 .price-value { grid-area: 1 / 1; min-width: 0; }
-.price-value.is-leaving { position: absolute; inset: 5px 7px; }
+.price-sizing { display: grid; grid-area: 1 / 1; visibility: hidden; pointer-events: none; }
+.price-sizing > span { grid-area: 1 / 1; }
 .animation-control {
   display: block;
   margin: 8px 0 -8px auto;

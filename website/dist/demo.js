@@ -19,6 +19,18 @@ const examples = {
   DZD: { rate: 145, locale: 'en-GB', label: 'Algerian dinars' },
 };
 const sequence = Object.keys(examples);
+// Format once and reserve enough room for every example without measuring layout.
+const amounts = Object.fromEntries(sequence.map(code => [code, new Intl.NumberFormat(examples[code].locale, {
+  style: 'currency', currency: code, currencyDisplay: 'narrowSymbol',
+}).format(89 * examples[code].rate)]));
+const sizing = document.createElement('span');
+sizing.className = 'price-sizing';
+sizing.setAttribute('aria-hidden', 'true');
+for (const amount of Object.values(amounts)) {
+  const value = document.createElement('span');
+  value.textContent = '≈ ' + amount;
+  sizing.append(value);
+}
 const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
 let playing = !motionPreference.matches;
 let visible = true;
@@ -28,7 +40,6 @@ let transitionId = 0;
 
 function displayPrice(text, slide) {
   const id = ++transitionId;
-  const previousWidth = converted.getBoundingClientRect().width;
   transition.forEach(animation => animation.cancel());
   transition = [];
   const previous = converted.querySelector('.price-value:last-child');
@@ -38,25 +49,19 @@ function displayPrice(text, slide) {
   converted.setAttribute('aria-label', text);
   next.setAttribute('aria-hidden', 'true');
   if (!slide || motionPreference.matches || !previous) {
-    converted.replaceChildren(next);
+    converted.replaceChildren(sizing, next);
     return;
   }
   previous.setAttribute('aria-hidden', 'true');
-  // Measure the incoming value on its own. The outgoing value must not keep
-  // the badge at the wider of the two widths during a shrinking transition.
-  converted.replaceChildren(next);
-  const nextWidth = converted.getBoundingClientRect().width;
-  previous.classList.add('is-leaving');
-  converted.replaceChildren(previous, next);
+  converted.replaceChildren(sizing, previous, next);
   const options = { duration: 420, easing: 'cubic-bezier(.22,.68,0,1)', fill: 'both' };
   transition = [
-    converted.animate([{ width: `${previousWidth}px` }, { width: `${nextWidth}px` }], options),
     previous.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(-125%)', opacity: 0 }], options),
     next.animate([{ transform: 'translateY(125%)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], options),
   ];
   Promise.all(transition.map(animation => animation.finished)).then(() => {
     if (id !== transitionId) return;
-    converted.replaceChildren(next);
+    converted.replaceChildren(sizing, next);
     transition.forEach(animation => animation.cancel());
     transition = [];
   }).catch(() => { /* Manual controls can interrupt a slide. */ });
@@ -64,9 +69,7 @@ function displayPrice(text, slide) {
 
 function updateDemo({ announce = false, slide = false } = {}) {
   const example = examples[currency.value];
-  const amount = new Intl.NumberFormat(example.locale, {
-    style: 'currency', currency: currency.value, currencyDisplay: 'narrowSymbol',
-  }).format(89 * example.rate);
+  const amount = amounts[currency.value];
   displayPrice(`≈ ${amount}`, slide && toggle.checked);
   converted.hidden = !toggle.checked;
   caption.hidden = !toggle.checked;
@@ -108,8 +111,6 @@ if (toggle && currency && playback) {
     updateDemo();
     schedule();
   });
-  // Release animated pixel widths immediately when responsive layout changes.
-  window.addEventListener('resize', () => { if (transition.length) updateDemo(); });
   if ('IntersectionObserver' in window) {
     new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; schedule(); }, { threshold: 0.15 })
       .observe(document.querySelector('#demo'));
