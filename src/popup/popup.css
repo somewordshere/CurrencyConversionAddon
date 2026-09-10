@@ -922,6 +922,20 @@ button:disabled, select:disabled, input:disabled { cursor: not-allowed; opacity:
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.website-link {
+  display: inline-block;
+  margin-bottom: var(--sp-2);
+  padding-block: var(--sp-1);
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-underline-offset: 3px;
+}
+.website-link:focus-visible {
+  outline: 3px solid var(--focus-outline);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 .hint {
   margin: var(--sp-1) 0 0;
   color: var(--text-secondary);
