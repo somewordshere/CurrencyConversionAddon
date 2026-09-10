@@ -118,6 +118,35 @@ test("real action popup keeps its designed width and scrolls expanded options", 
   expect(metrics.expanded.maxScrollTop).toBeGreaterThan(0);
 });
 
+test("website links open and stay clear of footer text", async ({ context, extensionWorker, extensionId }, testInfo) => {
+  await seedExtension(extensionWorker);
+  const shop = await context.newPage();
+  await shop.route(SHOP_URL, route => route.fulfill({ contentType: "text/html", body: SHOP_HTML }));
+  await shop.goto(SHOP_URL);
+  const popup = await openPopupForPage(context, extensionId, shop);
+  await expect(popup.locator("#popupApp")).toHaveAttribute("aria-busy", "false");
+  for (const colorScheme of ["light", "dark"]) {
+    await popup.emulateMedia({ colorScheme });
+    await popup.locator("#siteState").evaluate(node => {
+      node.textContent = "a-very-long-shopping-website.example.com · automatic conversion on";
+    });
+    const site = await popup.locator("#siteState").boundingBox();
+    const link = await popup.locator(".foot .website-link").boundingBox();
+    const shortcut = await popup.locator(".shortcut").boundingBox();
+    expect(site.x + site.width + 7).toBeLessThanOrEqual(link.x);
+    expect(link.y + link.height + 4).toBeLessThanOrEqual(shortcut.y);
+    await popup.locator("#popupApp").screenshot({ path: testInfo.outputPath("popup-" + colorScheme + ".png") });
+  }
+  await context.route("https://twinprice.com/", route => route.fulfill({ contentType: "text/html", body: "<h1>Twinprice website</h1>" }));
+  for (const selector of [".brand-link", ".foot .website-link"]) {
+    const opened = context.waitForEvent("page");
+    await popup.locator(selector).click();
+    const website = await opened;
+    await expect(website).toHaveURL("https://twinprice.com/");
+    await website.close();
+  }
+});
+
 test("automatically detects prices and offers conversion on an ordinary website", async ({
   context,
   extensionWorker

@@ -175,6 +175,14 @@ h1 {
 
 /* Live rate hero --------------------------------------------------------- */
 
+.brand-link { color: inherit; text-decoration: none; }
+.brand-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.brand-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
 .rate-hero {
   display: flex;
   align-items: flex-end;
@@ -923,9 +931,9 @@ button:disabled, select:disabled, input:disabled { cursor: not-allowed; opacity:
   text-overflow: ellipsis;
 }
 .foot-meta {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: var(--sp-3);
 }
 .foot-meta .site-state { min-width: 0; }
@@ -936,6 +944,8 @@ button:disabled, select:disabled, input:disabled { cursor: not-allowed; opacity:
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
   text-underline-offset: 3px;
+  line-height: 1.6;
+  white-space: nowrap;
 }
 .website-link:focus-visible {
   outline: 3px solid var(--focus-outline);
@@ -943,11 +953,12 @@ button:disabled, select:disabled, input:disabled { cursor: not-allowed; opacity:
   border-radius: 2px;
 }
 .hint {
-  margin: var(--sp-1) 0 0;
+  margin: var(--sp-2) 0 0;
   color: var(--text-secondary);
   font-size: var(--fs-xs);
-  line-height: 1.35;
+  line-height: 1.6;
 }
+.shortcut { display: inline-block; white-space: nowrap; }
 kbd {
   padding: 2px 5px;
   border: 1px solid var(--input-border);

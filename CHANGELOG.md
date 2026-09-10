@@ -22,6 +22,11 @@ one out gives you a neighbouring version's source; the archive under
 The remaining fourteen tags each point at a commit whose `package.json` declares
 exactly that version.
 
+## 2.1.4 - 2026-09-10
+
+- Made the popup title a clickable website link with keyboard focus styling.
+- Separated footer text and the website link, and kept the keyboard shortcut together without overlap.
+
 ## 2.1.3 - 2026-09-10
 
 - Moved the public website, popup link, welcome-page help, and extension homepage to https://twinprice.com/.
